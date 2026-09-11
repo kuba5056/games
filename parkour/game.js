@@ -9,21 +9,22 @@ const SPIKE = 20;
 const LEVEL_COUNT = 20;
 const STORAGE_KEY = 'parkour.unlocked';
 const INK = '#1a1a2e';
+const CORRIDOR = 250;
 
 const THEMES = [
-  { name: 'Słodkie anime', sky: ['#ffd6e8', '#fff0f5'], ground: '#c9a7ff', spike: '#ff6fa8', cube: '#ff8fb8', text: INK, deco: 'heart', face: 'cat' },
-  { name: 'Retro 8-bit', sky: ['#0b0b2a', '#1a1a4a'], ground: '#3adf5a', spike: '#ffe94a', cube: '#ff5a5a', text: '#fff', deco: 'pixel', face: 'pixel' },
-  { name: 'Kosmos', sky: ['#000010', '#101040'], ground: '#5a3fa0', spike: '#c8c8ff', cube: '#ffb347', text: '#fff', deco: 'star', face: 'helmet' },
+  { name: 'Słodkie anime', sky: ['#ffd6e8', '#fff0f5'], ground: '#c9a7ff', spike: '#ff6fa8', cube: '#ff8fb8', text: INK, deco: 'heart', face: 'cat', doubleJump: true, rule: 'Podwójny skok' },
+  { name: 'Retro 8-bit', sky: ['#0b0b2a', '#1a1a4a'], ground: '#3adf5a', spike: '#ffe94a', cube: '#ff5a5a', text: '#fff', deco: 'pixel', face: 'pixel', variable: true, rule: 'Przytrzymaj = wyższy skok' },
+  { name: 'Kosmos', sky: ['#000010', '#101040'], ground: '#5a3fa0', spike: '#c8c8ff', cube: '#ffb347', text: '#fff', deco: 'star', face: 'helmet', gravity: 0.3, jump: -9, rule: 'Niska grawitacja' },
   { name: 'Neon', sky: ['#120024', '#2a0050'], ground: '#00e5ff', spike: '#ff00c8', cube: '#faff00', text: '#fff', deco: 'tower', face: 'glasses' },
-  { name: 'Halloween', sky: ['#1a0a00', '#4a2000'], ground: '#ff7a00', spike: '#ffd23f', cube: '#8a2be2', text: '#fff', deco: 'bat', face: 'fangs' },
+  { name: 'Halloween', sky: ['#1a0a00', '#4a2000'], ground: '#ff7a00', spike: '#ffd23f', cube: '#8a2be2', text: '#fff', deco: 'bat', face: 'fangs', dark: true, rule: 'Ciemność' },
   { name: 'Cukierkowy', sky: ['#bff5e0', '#fff7b0'], ground: '#ff9ecf', spike: '#7b3fe4', cube: '#4ecca3', text: INK, deco: 'ring', face: 'sparkle' },
   { name: 'Lodowy', sky: ['#dff6ff', '#ffffff'], ground: '#7fc8ff', spike: '#2f6fb0', cube: '#ff6f61', text: INK, deco: 'flake', face: 'hat' },
   { name: 'Piekło', sky: ['#000000', '#5a0000'], ground: '#401212', spike: '#ff4500', cube: '#ff9f1c', text: '#fff', deco: 'flame', face: 'horns' },
   { name: 'Vaporwave', sky: ['#ff71ce', '#01cdfe'], ground: '#b967ff', spike: '#fffb96', cube: '#05ffa1', text: INK, deco: 'grid', face: 'shades' },
-  { name: 'Demoniczny', sky: ['#000000', '#1a0000'], ground: '#3a0000', spike: '#ffffff', cube: '#e01010', text: '#fff', deco: 'pentagram', face: 'demon' },
+  { name: 'Demoniczny', sky: ['#000000', '#1a0000'], ground: '#3a0000', spike: '#ffffff', cube: '#e01010', text: '#fff', deco: 'pentagram', face: 'demon', flip: true, rule: 'Skok = odwrócenie grawitacji' },
 ];
 
-const player = { x: 0, y: 0, w: SIZE, h: SIZE, vx: SPEED, vy: 0, onGround: false };
+const player = { x: 0, y: 0, w: SIZE, h: SIZE, vy: 0, dir: 1, airJumps: 0, onGround: false };
 
 let state = 'menu';
 let levelIndex = 0;
@@ -35,6 +36,7 @@ let attempts = 1;
 let selected = 0;
 let unlocked = 0;
 let jumpHeld = false;
+let jumpPressed = false;
 try { unlocked = Number(localStorage.getItem(STORAGE_KEY)) || 0; } catch {}
 
 // ---------- audio & options ----------
@@ -84,15 +86,27 @@ function rng(seed) {
   };
 }
 
-// Gap range (px) crossable by jumping when the cube's right edge reaches the platform edge,
-// onto a ledge dy px higher, without clipping its wall.
+// Gap range (px) crossable from anywhere on the platform (up to hanging SIZE-1 px over its edge)
+// onto a ledge dy px higher without clipping its wall; `far` is the longest landing distance.
 function jumpRange(dy) {
+  const g = theme.gravity ?? GRAVITY;
+  if (theme.flip) {
+    // Gravity flip: fall from rest to the opposite surface, which is nearer on one side by |dy|.
+    let near = 0;
+    for (let n = 1, y = 0, vy = 0; n < 120; n++) {
+      vy += g;
+      y += vy;
+      if (!near && y >= CORRIDOR - SIZE - Math.abs(dy)) near = n;
+      if (y >= CORRIDOR - SIZE + Math.abs(dy)) return { min: 0, max: SPEED * near - 4, far: SPEED * n + SIZE };
+    }
+    return null;
+  }
   let up = -1;
-  for (let n = 1, y = 0, vy = JUMP_FORCE; n < 80; n++) {
-    vy += GRAVITY;
+  for (let n = 1, y = 0, vy = theme.jump ?? JUMP_FORCE; n < 120; n++) {
+    vy += g;
     y += vy;
     if (y <= -dy && up < 0) up = n;
-    if (y > -dy && up >= 0) return { min: SPEED * up, max: SPEED * n - 4 };
+    if (y > -dy && up >= 0) return { min: SPEED * up + SIZE, max: SPEED * n - 4, far: SPEED * n + SIZE };
   }
   return null;
 }
@@ -125,13 +139,14 @@ function generateLevel(i) {
     if (count) w = Math.max(w, 140 + (groups - 1) * 220 + 60 + count * SPIKE + 170);
 
     if (platforms.length) {
-      let dy = Math.round(Math.max(y - 420, Math.min(y - 150, spec.dy || 0)));
+      let dy = Math.round(Math.max(y - 420, Math.min(y - (theme.flip ? 280 : 150), spec.dy || 0)));
       let range = jumpRange(dy);
       if (!range) { dy = 0; range = jumpRange(0); }
       const gapMax = range.max - (44 - 32 * t);
-      const gapMin = Math.max(range.min + 8, 40 + 60 * t, range.max - 22 - w);
-      const gap = spec.far ? gapMax : gapMin >= gapMax ? gapMax : r(gapMin, gapMax);
-      x += Math.round(gap);
+      const gapMin = Math.max(range.min + 8, 40 + 60 * t, range.far + 4 - w);
+      const gap = Math.round(spec.far ? gapMax : gapMin >= gapMax ? gapMax : r(gapMin, gapMax));
+      w = Math.max(w, range.far + 4 - gap);
+      x += gap;
       y -= dy;
     }
     platforms.push({ x, y, w, h: canvas.height - y });
@@ -160,7 +175,13 @@ function generateLevel(i) {
     y: 20 + decoRand() * 380,
     s: 6 + decoRand() * 12,
   }));
-  return { platforms, spikes, deco, goal: { x: end.x + end.w - 40, y: end.y - 60, w: 20, h: 60 } };
+  const goal = { x: end.x + end.w - 40, y: end.y - 60, w: 20, h: 60 };
+  if (theme.flip) {
+    for (const p of [...platforms]) platforms.push({ x: p.x, y: 0, w: p.w, h: p.y - CORRIDOR });
+    goal.y = end.y - CORRIDOR;
+    goal.h = CORRIDOR;
+  }
+  return { platforms, spikes, deco, goal };
 }
 
 // ---------- game state ----------
@@ -179,6 +200,8 @@ function resetPlayer() {
   player.x = 40;
   player.y = level.platforms[0].y - SIZE;
   player.vy = 0;
+  player.dir = 1;
+  player.airJumps = 0;
   camX = 0;
 }
 
@@ -204,12 +227,26 @@ function overlaps(a, b) {
 function update() {
   if (state !== 'play') return;
 
-  if (jumpHeld && player.onGround) {
-    player.vy = JUMP_FORCE;
+  const jump = theme.jump ?? JUMP_FORCE;
+  if (theme.flip) {
+    if (jumpPressed && player.onGround) {
+      player.dir = -player.dir;
+      player.onGround = false;
+      tone(200, 500, 0.15, 'sawtooth');
+    }
+  } else if (jumpHeld && player.onGround) {
+    player.vy = jump;
     player.onGround = false;
+    player.airJumps = theme.doubleJump ? 1 : 0;
     tone(300, 700, 0.12, 'square');
+  } else if (jumpPressed && player.airJumps > 0) {
+    player.vy = jump;
+    player.airJumps--;
+    tone(500, 1000, 0.12, 'square');
   }
-  player.vy += GRAVITY;
+  if (theme.variable && !jumpHeld && player.vy < -4) player.vy = -4;
+  jumpPressed = false;
+  player.vy += (theme.gravity ?? GRAVITY) * player.dir;
 
   player.x += SPEED;
   for (const p of level.platforms) {
@@ -220,7 +257,7 @@ function update() {
   player.onGround = false;
   for (const p of level.platforms) {
     if (!overlaps(player, p)) continue;
-    player.y = p.y - SIZE;
+    player.y = player.dir > 0 ? p.y - SIZE : p.y + p.h;
     player.vy = 0;
     player.onGround = true;
   }
@@ -228,7 +265,7 @@ function update() {
   for (const s of level.spikes) {
     if (overlaps(player, { x: s.x + 5, y: s.y + 6, w: 10, h: 14 })) return die();
   }
-  if (player.y > canvas.height) return die();
+  if (player.y > canvas.height || player.y + SIZE < 0) return die();
   if (overlaps(player, level.goal)) return completeLevel();
 
   camX = Math.max(0, Math.min(player.x + SIZE / 2 - canvas.width / 2, levelWidth - canvas.width));
@@ -266,7 +303,7 @@ window.addEventListener('keydown', (e) => {
     if ((e.code === 'Enter' || e.code === 'Space') && selected <= unlocked) startLevel(selected);
   } else if (state === 'play') {
     if (e.code === 'Escape') pause();
-    if (JUMP_KEYS.includes(e.code)) jumpHeld = true;
+    if (JUMP_KEYS.includes(e.code)) jumpHeld = jumpPressed = true;
   } else if (state === 'pause') {
     if (e.code === 'ArrowDown') pauseSel = (pauseSel + 1) % PAUSE_ITEMS.length;
     if (e.code === 'ArrowUp') pauseSel = (pauseSel + PAUSE_ITEMS.length - 1) % PAUSE_ITEMS.length;
@@ -285,7 +322,7 @@ function press(pt) {
     const i = hitIndex(pt, LEVEL_COUNT, tileRect);
     if (i >= 0 && i <= unlocked) startLevel(i);
   } else if (state === 'play') {
-    jumpHeld = true;
+    jumpHeld = jumpPressed = true;
   } else if (state === 'pause') {
     const k = hitIndex(pt, PAUSE_ITEMS.length, pauseRow);
     if (k >= 0) PAUSE_ITEMS[k].action();
@@ -299,7 +336,7 @@ window.addEventListener('mouseup', () => { jumpHeld = false; });
 window.addEventListener('touchend', () => { jumpHeld = false; });
 
 function tileRect(i) {
-  return { x: 100 + (i % 5) * 120, y: 120 + Math.floor(i / 5) * 80, w: 100, h: 60 };
+  return { x: 100 + (i % 5) * 120, y: 100 + Math.floor(i / 5) * 80, w: 100, h: 60 };
 }
 
 function pauseRow(k) {
@@ -402,6 +439,11 @@ function drawBackground() {
 function drawPlayer() {
   const { x, y } = player;
   const f = theme.face;
+  ctx.save();
+  if (player.dir < 0) {
+    ctx.translate(0, 2 * y + SIZE);
+    ctx.scale(1, -1);
+  }
   ctx.fillStyle = theme.cube;
   ctx.fillRect(x, y, SIZE, SIZE);
 
@@ -466,6 +508,7 @@ function drawPlayer() {
     tri(x + 10, y + 20, x + 12, y + 26, x + 14, y + 20);
     tri(x + 16, y + 20, x + 18, y + 26, x + 20, y + 20);
   }
+  ctx.restore();
 }
 
 function drawGame() {
@@ -484,6 +527,15 @@ function drawGame() {
   drawPlayer();
   ctx.restore();
 
+  if (theme.dark) {
+    const cx = player.x - camX + SIZE / 2, cy = player.y + SIZE / 2;
+    const light = ctx.createRadialGradient(cx, cy, 50, cx, cy, 200);
+    light.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    light.addColorStop(1, 'rgba(0, 0, 0, 0.94)');
+    ctx.fillStyle = light;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
   ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
   ctx.fillRect(200, 12, 400, 8);
   ctx.fillStyle = theme.cube;
@@ -493,6 +545,10 @@ function drawGame() {
   ctx.font = '16px sans-serif';
   ctx.textAlign = 'left';
   ctx.fillText(`Poziom ${levelIndex + 1} · ${theme.name}`, 12, 24);
+  if (theme.rule) {
+    ctx.font = '13px sans-serif';
+    ctx.fillText(theme.rule, 12, 44);
+  }
   ctx.textAlign = 'right';
   ctx.fillText(`Próba ${attempts}`, canvas.width - 12, 24);
 }
@@ -503,7 +559,7 @@ function drawMenu() {
   ctx.fillStyle = '#eee';
   ctx.textAlign = 'center';
   ctx.font = 'bold 36px sans-serif';
-  ctx.fillText('PARKOUR', canvas.width / 2, 70);
+  ctx.fillText('PARKOUR', canvas.width / 2, 62);
 
   for (let i = 0; i < LEVEL_COUNT; i++) {
     const r = tileRect(i);
@@ -531,9 +587,13 @@ function drawMenu() {
     }
   }
 
+  const th = THEMES[selected % THEMES.length];
+  ctx.fillStyle = '#eee';
+  ctx.font = '16px sans-serif';
+  ctx.fillText(`${selected + 1}. ${th.name}${th.rule ? ' — ' + th.rule : ''}`, canvas.width / 2, 420);
   ctx.fillStyle = '#aaa';
   ctx.font = '14px sans-serif';
-  ctx.fillText('Kliknij poziom lub strzałki + Enter · F — pełny ekran · M — dźwięk', canvas.width / 2, 435);
+  ctx.fillText('Kliknij poziom lub strzałki + Enter · F — pełny ekran · M — dźwięk', canvas.width / 2, 442);
 }
 
 function drawPause() {
