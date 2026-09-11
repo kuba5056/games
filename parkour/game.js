@@ -2,130 +2,135 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
 const GRAVITY = 0.6;
-const MOVE_SPEED = 4;
+const SPEED = 4;
 const JUMP_FORCE = -12;
-const FRICTION = 0.8;
+const SIZE = 30;
+const SPIKE = 20;
+const LEVEL_COUNT = 20;
+const STORAGE_KEY = 'parkour.unlocked';
 
-// Max jump: ~114px high, ~160px far on flat ground.
-const levels = [
-  {
-    start: { x: 40, y: 380 },
-    platforms: [
-      { x: 0, y: 420, w: 400, h: 30 },
-      { x: 480, y: 420, w: 400, h: 30 },
-      { x: 600, y: 340, w: 100, h: 20 },
-      { x: 960, y: 420, w: 300, h: 30 },
-      { x: 1100, y: 330, w: 100, h: 20 },
-      { x: 1340, y: 420, w: 260, h: 30 },
-    ],
-    goal: { x: 1540, y: 360, w: 30, h: 60 },
-  },
-  {
-    start: { x: 40, y: 380 },
-    platforms: [
-      { x: 0, y: 420, w: 300, h: 30 },
-      { x: 400, y: 390, w: 180, h: 20 },
-      { x: 680, y: 340, w: 150, h: 20 },
-      { x: 930, y: 340, w: 120, h: 20 },
-      { x: 1150, y: 400, w: 150, h: 20 },
-      { x: 1400, y: 350, w: 120, h: 20 },
-      { x: 1620, y: 300, w: 120, h: 20 },
-      { x: 1840, y: 300, w: 160, h: 20 },
-    ],
-    goal: { x: 1950, y: 240, w: 30, h: 60 },
-  },
-  {
-    start: { x: 40, y: 380 },
-    platforms: [
-      { x: 0, y: 420, w: 200, h: 30 },
-      { x: 320, y: 400, w: 90, h: 20 },
-      { x: 530, y: 360, w: 80, h: 20 },
-      { x: 740, y: 310, w: 80, h: 20 },
-      { x: 950, y: 310, w: 70, h: 20 },
-      { x: 1160, y: 370, w: 70, h: 20 },
-      { x: 1380, y: 320, w: 60, h: 20 },
-      { x: 1590, y: 270, w: 60, h: 20 },
-      { x: 1800, y: 330, w: 70, h: 20 },
-      { x: 2020, y: 280, w: 60, h: 20 },
-      { x: 2230, y: 280, w: 170, h: 20 },
-    ],
-    goal: { x: 2350, y: 220, w: 30, h: 60 },
-  },
-  {
-    start: { x: 40, y: 380 },
-    platforms: [
-      { x: 0, y: 420, w: 150, h: 30 },
-      { x: 300, y: 400, w: 50, h: 20 },
-      { x: 460, y: 340, w: 50, h: 20 },
-      { x: 670, y: 340, w: 45, h: 20 },
-      { x: 865, y: 280, w: 45, h: 20 },
-      { x: 1075, y: 280, w: 40, h: 20 },
-      { x: 1265, y: 220, w: 40, h: 20 },
-      { x: 1470, y: 290, w: 40, h: 20 },
-      { x: 1660, y: 230, w: 40, h: 20 },
-      { x: 1865, y: 230, w: 40, h: 20 },
-      { x: 2055, y: 170, w: 40, h: 20 },
-      { x: 2260, y: 240, w: 40, h: 20 },
-      { x: 2450, y: 180, w: 40, h: 20 },
-      { x: 2650, y: 180, w: 150, h: 20 },
-    ],
-    goal: { x: 2750, y: 120, w: 30, h: 60 },
-  },
-];
+const player = { x: 0, y: 0, w: SIZE, h: SIZE, vx: SPEED, vy: 0, onGround: false };
 
-const player = { x: 0, y: 0, w: 30, h: 40, vx: 0, vy: 0, onGround: false };
-
+let state = 'menu';
 let levelIndex = 0;
-let level = levels[0];
+let level = null;
 let levelWidth = 0;
 let camX = 0;
-let won = false;
+let attempts = 1;
+let selected = 0;
+let unlocked = 0;
+let jumpHeld = false;
+try { unlocked = Number(localStorage.getItem(STORAGE_KEY)) || 0; } catch {}
 
-const keys = {};
-window.addEventListener('keydown', (e) => { keys[e.code] = true; });
-window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+// ---------- level generator ----------
+
+function rng(seed) {
+  return () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Gap range (px) crossable by jumping when the cube's right edge reaches the platform edge,
+// onto a ledge dy px higher, without clipping its wall.
+function jumpRange(dy) {
+  let up = -1;
+  for (let n = 1, y = 0, vy = JUMP_FORCE; n < 80; n++) {
+    vy += GRAVITY;
+    y += vy;
+    if (y <= -dy && up < 0) up = n;
+    if (y > -dy && up >= 0) return { min: SPEED * up, max: SPEED * n - 4 };
+  }
+  return null;
+}
+
+function generateLevel(i) {
+  const rand = rng(i + 1);
+  const between = (a, b) => a + rand() * (b - a);
+  const t = i / (LEVEL_COUNT - 1);
+  const segments = 8 + Math.round(20 * t);
+  const platforms = [];
+  const spikes = [];
+  let x = 0;
+  let y = 420;
+
+  for (let s = 0; s < segments; s++) {
+    const edge = s === 0 || s === segments - 1;
+    const spiky = i >= 2 && !edge && rand() < 0.3 + 0.4 * t;
+    const count = spiky ? 1 + Math.floor(rand() * (1 + 2 * t)) : 0;
+    let w = edge ? 220 : Math.round(between(200 - 155 * t, 320 - 100 * t));
+    if (spiky) w = Math.max(w, 300 + count * SPIKE);
+    platforms.push({ x, y, w, h: 20 });
+
+    if (spiky) {
+      const sx = Math.round(between(x + 140, x + w - 150 - count * SPIKE));
+      for (let k = 0; k < count; k++) spikes.push({ x: sx + k * SPIKE, y: y - SPIKE });
+    }
+    if (s === segments - 1) break;
+
+    let dy = Math.round(between(-70, 70) * t);
+    dy = Math.max(y - 420, Math.min(y - 150, dy));
+    let range = jumpRange(dy);
+    if (!range) { dy = 0; range = jumpRange(0); }
+    const gapMax = range.max - (44 - 32 * t);
+    const gapMin = Math.max(range.min + 8, 40 + 60 * t);
+    const gap = Math.round(gapMin >= gapMax ? gapMax : between(gapMin, gapMax));
+    x += w + gap;
+    y -= dy;
+  }
+
+  const end = platforms[platforms.length - 1];
+  return { platforms, spikes, goal: { x: end.x + end.w - 40, y: end.y - 60, w: 20, h: 60 } };
+}
+
+// ---------- game state ----------
+
+function startLevel(i) {
+  levelIndex = i;
+  level = generateLevel(i);
+  levelWidth = Math.max(...level.platforms.map((p) => p.x + p.w));
+  attempts = 1;
+  resetPlayer();
+  state = 'play';
+}
+
+function resetPlayer() {
+  player.x = 40;
+  player.y = level.platforms[0].y - SIZE;
+  player.vy = 0;
+  camX = 0;
+}
+
+function die() {
+  attempts++;
+  resetPlayer();
+}
+
+function completeLevel() {
+  unlocked = Math.max(unlocked, levelIndex + 1);
+  try { localStorage.setItem(STORAGE_KEY, unlocked); } catch {}
+  selected = Math.min(levelIndex + 1, LEVEL_COUNT - 1);
+  state = levelIndex + 1 === LEVEL_COUNT ? 'won' : 'menu';
+}
 
 function overlaps(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
-function loadLevel(i) {
-  levelIndex = i;
-  level = levels[i];
-  levelWidth = Math.max(...level.platforms.map((p) => p.x + p.w));
-  resetPlayer();
-}
-
-function resetPlayer() {
-  player.x = level.start.x;
-  player.y = level.start.y;
-  player.vx = 0;
-  player.vy = 0;
-}
-
 function update() {
-  if (won) {
-    if (keys.Space) { won = false; loadLevel(0); }
-    return;
-  }
+  if (state !== 'play') return;
 
-  if (keys.KeyA || keys.ArrowLeft) player.vx = -MOVE_SPEED;
-  else if (keys.KeyD || keys.ArrowRight) player.vx = MOVE_SPEED;
-  else player.vx *= FRICTION;
-
-  if ((keys.KeyW || keys.ArrowUp || keys.Space) && player.onGround) {
+  if (jumpHeld && player.onGround) {
     player.vy = JUMP_FORCE;
     player.onGround = false;
   }
-
   player.vy += GRAVITY;
 
-  player.x += player.vx;
+  player.x += SPEED;
   for (const p of level.platforms) {
-    if (!overlaps(player, p)) continue;
-    if (player.vx > 0) player.x = p.x - player.w;
-    else if (player.vx < 0) player.x = p.x + p.w;
-    player.vx = 0;
+    if (overlaps(player, p)) return die();
   }
 
   player.y += player.vy;
@@ -133,82 +138,179 @@ function update() {
   for (const p of level.platforms) {
     if (!overlaps(player, p)) continue;
     if (player.vy > 0) {
-      player.y = p.y - player.h;
+      player.y = p.y - SIZE;
       player.onGround = true;
-    } else if (player.vy < 0) {
+    } else {
       player.y = p.y + p.h;
     }
     player.vy = 0;
   }
 
-  if (player.x < 0) player.x = 0;
-  if (player.x + player.w > levelWidth) player.x = levelWidth - player.w;
-  if (player.y > canvas.height) resetPlayer();
-
-  if (overlaps(player, level.goal)) {
-    if (levelIndex + 1 < levels.length) loadLevel(levelIndex + 1);
-    else won = true;
+  for (const s of level.spikes) {
+    if (overlaps(player, { x: s.x + 5, y: s.y + 6, w: 10, h: 14 })) return die();
   }
+  if (player.y > canvas.height) return die();
+  if (overlaps(player, level.goal)) return completeLevel();
 
-  const target = player.x + player.w / 2 - canvas.width / 2;
-  camX = Math.max(0, Math.min(target, levelWidth - canvas.width));
+  camX = Math.max(0, Math.min(player.x + SIZE / 2 - canvas.width / 2, levelWidth - canvas.width));
 }
+
+// ---------- input ----------
+
+const JUMP_KEYS = ['Space', 'KeyW', 'ArrowUp'];
+
+window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  if (state === 'menu') {
+    if (e.code === 'ArrowRight') selected = Math.min(LEVEL_COUNT - 1, selected + 1);
+    if (e.code === 'ArrowLeft') selected = Math.max(0, selected - 1);
+    if (e.code === 'ArrowDown') selected = Math.min(LEVEL_COUNT - 1, selected + 5);
+    if (e.code === 'ArrowUp') selected = Math.max(0, selected - 5);
+    if ((e.code === 'Enter' || e.code === 'Space') && selected <= unlocked) startLevel(selected);
+  } else if (state === 'play') {
+    if (e.code === 'Escape') state = 'menu';
+    if (JUMP_KEYS.includes(e.code)) jumpHeld = true;
+  } else {
+    state = 'menu';
+  }
+});
+window.addEventListener('keyup', (e) => { if (JUMP_KEYS.includes(e.code)) jumpHeld = false; });
+
+function press(pt) {
+  if (state === 'menu') {
+    const i = tileAt(pt);
+    if (i >= 0 && i <= unlocked) startLevel(i);
+  } else if (state === 'play') {
+    jumpHeld = true;
+  } else {
+    state = 'menu';
+  }
+}
+canvas.addEventListener('mousedown', press);
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); press(e.touches[0]); }, { passive: false });
+window.addEventListener('mouseup', () => { jumpHeld = false; });
+window.addEventListener('touchend', () => { jumpHeld = false; });
+
+function tileRect(i) {
+  return { x: 100 + (i % 5) * 120, y: 120 + Math.floor(i / 5) * 80, w: 100, h: 60 };
+}
+
+function tileAt(pt) {
+  const rect = canvas.getBoundingClientRect();
+  const mx = (pt.clientX - rect.left) * canvas.width / rect.width;
+  const my = (pt.clientY - rect.top) * canvas.height / rect.height;
+  for (let i = 0; i < LEVEL_COUNT; i++) {
+    const r = tileRect(i);
+    if (mx >= r.x && mx < r.x + r.w && my >= r.y && my < r.y + r.h) return i;
+  }
+  return -1;
+}
+
+// ---------- drawing ----------
 
 function drawPlayer() {
   ctx.fillStyle = '#e94560';
-  ctx.fillRect(player.x, player.y, player.w, player.h);
-
+  ctx.fillRect(player.x, player.y, SIZE, SIZE);
   ctx.fillStyle = '#1a1a2e';
   ctx.beginPath();
-  ctx.arc(player.x + 10, player.y + 13, 3, 0, Math.PI * 2);
-  ctx.arc(player.x + 20, player.y + 13, 3, 0, Math.PI * 2);
+  ctx.arc(player.x + 10, player.y + 11, 3, 0, Math.PI * 2);
+  ctx.arc(player.x + 20, player.y + 11, 3, 0, Math.PI * 2);
   ctx.fill();
-
   ctx.strokeStyle = '#1a1a2e';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(player.x + 15, player.y + 22, 7, Math.PI * 0.15, Math.PI * 0.85);
+  ctx.arc(player.x + 15, player.y + 17, 6, Math.PI * 0.15, Math.PI * 0.85);
   ctx.stroke();
 }
 
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
+function drawGame() {
   ctx.save();
   ctx.translate(-camX, 0);
 
   ctx.fillStyle = '#0f3460';
   for (const p of level.platforms) ctx.fillRect(p.x, p.y, p.w, p.h);
 
+  ctx.fillStyle = '#f5f5f5';
+  for (const s of level.spikes) {
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y + SPIKE);
+    ctx.lineTo(s.x + SPIKE / 2, s.y);
+    ctx.lineTo(s.x + SPIKE, s.y + SPIKE);
+    ctx.fill();
+  }
+
   ctx.fillStyle = '#4ecca3';
   ctx.fillRect(level.goal.x, level.goal.y, level.goal.w, level.goal.h);
-
   drawPlayer();
   ctx.restore();
 
+  ctx.fillStyle = '#0f3460';
+  ctx.fillRect(200, 12, 400, 8);
+  ctx.fillStyle = '#4ecca3';
+  ctx.fillRect(200, 12, 400 * Math.min(1, player.x / (levelWidth - SIZE)), 8);
+
+  ctx.fillStyle = '#eee';
+  ctx.font = '16px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`Poziom ${levelIndex + 1}`, 12, 24);
+  ctx.textAlign = 'right';
+  ctx.fillText(`Próba ${attempts}`, canvas.width - 12, 24);
+}
+
+function drawMenu() {
+  ctx.fillStyle = '#eee';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 36px sans-serif';
+  ctx.fillText('PARKOUR', canvas.width / 2, 70);
+
+  for (let i = 0; i < LEVEL_COUNT; i++) {
+    const r = tileRect(i);
+    const open = i <= unlocked;
+    ctx.fillStyle = open ? '#e94560' : '#2a2a4a';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    if (i === selected) {
+      ctx.strokeStyle = '#4ecca3';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(r.x - 3, r.y - 3, r.w + 6, r.h + 6);
+    }
+    if (open) {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 24px sans-serif';
+      ctx.fillText(i + 1, r.x + r.w / 2, r.y + r.h / 2 + 9);
+    } else {
+      const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+      ctx.fillStyle = '#666';
+      ctx.fillRect(cx - 8, cy - 2, 16, 12);
+      ctx.strokeStyle = '#666';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy - 3, 5, Math.PI, 0);
+      ctx.stroke();
+    }
+  }
+
+  ctx.fillStyle = '#aaa';
+  ctx.font = '14px sans-serif';
+  ctx.fillText('Kliknij poziom lub strzałki + Enter', canvas.width / 2, 435);
+}
+
+function drawWon() {
+  ctx.fillStyle = '#4ecca3';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 40px sans-serif';
+  ctx.fillText('Wszystkie poziomy ukończone!', canvas.width / 2, canvas.height / 2 - 10);
   ctx.fillStyle = '#eee';
   ctx.font = '18px sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText(`Poziom ${levelIndex + 1} / ${levels.length}`, 12, 26);
-
-  if (won) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#4ecca3';
-    ctx.font = '40px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Wygrałeś!', canvas.width / 2, canvas.height / 2 - 10);
-    ctx.fillStyle = '#eee';
-    ctx.font = '18px sans-serif';
-    ctx.fillText('Spacja — od nowa', canvas.width / 2, canvas.height / 2 + 30);
-  }
+  ctx.fillText('Dowolny klawisz — menu', canvas.width / 2, canvas.height / 2 + 30);
 }
 
 function loop() {
   update();
-  draw();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (state === 'play') drawGame();
+  else if (state === 'menu') drawMenu();
+  else drawWon();
   requestAnimationFrame(loop);
 }
 
-loadLevel(0);
 loop();
