@@ -10,6 +10,9 @@ const LEVEL_COUNT = 20;
 const STORAGE_KEY = 'parkour.unlocked';
 const INK = '#1a1a2e';
 const CORRIDOR = 250;
+const W = 800;
+const H = 450;
+const SCALE = canvas.width / W;
 
 const THEMES = [
   { name: 'Słodkie anime', sky: ['#ffd6e8', '#fff0f5'], ground: '#c9a7ff', spike: '#ff6fa8', cube: '#ff8fb8', text: INK, deco: 'heart', face: 'cat', doubleJump: true, rule: 'Podwójny skok' },
@@ -149,7 +152,7 @@ function generateLevel(i) {
       x += gap;
       y -= dy;
     }
-    platforms.push({ x, y, w, h: canvas.height - y });
+    platforms.push({ x, y, w, h: H - y });
     for (let g = 0; g < groups; g++) {
       const sx = x + 140 + g * 220 + Math.round(r(0, 60));
       for (let k = 0; k < count; k++) spikes.push({ x: sx + k * SPIKE, y: y - SPIKE });
@@ -171,7 +174,7 @@ function generateLevel(i) {
   const end = platforms[platforms.length - 1];
   const decoRand = rng(i + 100);
   const deco = Array.from({ length: 35 }, () => ({
-    x: decoRand() * ((end.x + end.w - canvas.width) * 0.3 + canvas.width),
+    x: decoRand() * ((end.x + end.w - W) * 0.3 + W),
     y: 20 + decoRand() * 380,
     s: 6 + decoRand() * 12,
   }));
@@ -265,10 +268,10 @@ function update() {
   for (const s of level.spikes) {
     if (overlaps(player, { x: s.x + 5, y: s.y + 6, w: 10, h: 14 })) return die();
   }
-  if (player.y > canvas.height || player.y + SIZE < 0) return die();
+  if (player.y > H || player.y + SIZE < 0) return die();
   if (overlaps(player, level.goal)) return completeLevel();
 
-  camX = Math.max(0, Math.min(player.x + SIZE / 2 - canvas.width / 2, levelWidth - canvas.width));
+  camX = Math.max(0, Math.min(player.x + SIZE / 2 - W / 2, levelWidth - W));
 }
 
 // ---------- input ----------
@@ -345,8 +348,8 @@ function pauseRow(k) {
 
 function hitIndex(pt, count, rectOf) {
   const rect = canvas.getBoundingClientRect();
-  const mx = (pt.clientX - rect.left) * canvas.width / rect.width;
-  const my = (pt.clientY - rect.top) * canvas.height / rect.height;
+  const mx = (pt.clientX - rect.left) * W / rect.width;
+  const my = (pt.clientY - rect.top) * H / rect.height;
   for (let i = 0; i < count; i++) {
     const r = rectOf(i);
     if (mx >= r.x && mx < r.x + r.w && my >= r.y && my < r.y + r.h) return i;
@@ -391,7 +394,7 @@ function drawShape(kind, x, y, s) {
       break;
     case 'pixel': ctx.fillRect(x, y, s, s); break;
     case 'star': star(x, y, s); ctx.fill(); break;
-    case 'tower': ctx.fillRect(x, y + 100, s * 3, canvas.height); break;
+    case 'tower': ctx.fillRect(x, y + 100, s * 3, H); break;
     case 'bat':
       ctx.beginPath();
       ctx.arc(x - s / 2, y, s / 2, Math.PI, 0);
@@ -414,11 +417,11 @@ function drawShape(kind, x, y, s) {
 }
 
 function drawBackground() {
-  const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
   sky.addColorStop(0, theme.sky[0]);
   sky.addColorStop(1, theme.sky[1]);
   ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
 
   ctx.save();
   ctx.globalAlpha = 0.3;
@@ -426,8 +429,8 @@ function drawBackground() {
   ctx.lineWidth = 2;
   if (theme.deco === 'grid') {
     ctx.beginPath();
-    for (let k = 0; k < 8; k++) { const gy = 230 + k * k * 4; ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); }
-    for (let k = -8; k <= 8; k++) { ctx.moveTo(400 + k * 30, 230); ctx.lineTo(400 + k * 160, canvas.height); }
+    for (let k = 0; k < 8; k++) { const gy = 230 + k * k * 4; ctx.moveTo(0, gy); ctx.lineTo(W, gy); }
+    for (let k = -8; k <= 8; k++) { ctx.moveTo(400 + k * 30, 230); ctx.lineTo(400 + k * 160, H); }
     ctx.stroke();
   } else {
     ctx.translate(-camX * 0.3, 0);
@@ -533,7 +536,7 @@ function drawGame() {
     light.addColorStop(0, 'rgba(0, 0, 0, 0)');
     light.addColorStop(1, 'rgba(0, 0, 0, 0.94)');
     ctx.fillStyle = light;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, W, H);
   }
 
   ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
@@ -550,16 +553,16 @@ function drawGame() {
     ctx.fillText(theme.rule, 12, 44);
   }
   ctx.textAlign = 'right';
-  ctx.fillText(`Próba ${attempts}`, canvas.width - 12, 24);
+  ctx.fillText(`Próba ${attempts}`, W - 12, 24);
 }
 
 function drawMenu() {
   ctx.fillStyle = '#16213e';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#eee';
   ctx.textAlign = 'center';
   ctx.font = 'bold 36px sans-serif';
-  ctx.fillText('PARKOUR', canvas.width / 2, 62);
+  ctx.fillText('PARKOUR', W / 2, 62);
 
   for (let i = 0; i < LEVEL_COUNT; i++) {
     const r = tileRect(i);
@@ -590,20 +593,20 @@ function drawMenu() {
   const th = THEMES[selected % THEMES.length];
   ctx.fillStyle = '#eee';
   ctx.font = '16px sans-serif';
-  ctx.fillText(`${selected + 1}. ${th.name}${th.rule ? ' — ' + th.rule : ''}`, canvas.width / 2, 420);
+  ctx.fillText(`${selected + 1}. ${th.name}${th.rule ? ' — ' + th.rule : ''}`, W / 2, 420);
   ctx.fillStyle = '#aaa';
   ctx.font = '14px sans-serif';
-  ctx.fillText('Kliknij poziom lub strzałki + Enter · F — pełny ekran · M — dźwięk', canvas.width / 2, 442);
+  ctx.fillText('Kliknij poziom lub strzałki + Enter · F — pełny ekran · M — dźwięk', W / 2, 442);
 }
 
 function drawPause() {
   drawGame();
   ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 32px sans-serif';
-  ctx.fillText('PAUZA', canvas.width / 2, 90);
+  ctx.fillText('PAUZA', W / 2, 90);
   ctx.font = '20px sans-serif';
   PAUSE_ITEMS.forEach((item, k) => {
     const r = pauseRow(k);
@@ -620,18 +623,19 @@ function drawPause() {
 
 function drawWon() {
   ctx.fillStyle = '#16213e';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#4ecca3';
   ctx.textAlign = 'center';
   ctx.font = 'bold 40px sans-serif';
-  ctx.fillText('Wszystkie poziomy ukończone!', canvas.width / 2, canvas.height / 2 - 10);
+  ctx.fillText('Wszystkie poziomy ukończone!', W / 2, H / 2 - 10);
   ctx.fillStyle = '#eee';
   ctx.font = '18px sans-serif';
-  ctx.fillText('Dowolny klawisz — menu', canvas.width / 2, canvas.height / 2 + 30);
+  ctx.fillText('Dowolny klawisz — menu', W / 2, H / 2 + 30);
 }
 
 function loop() {
   update();
+  ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
   if (state === 'play') drawGame();
   else if (state === 'pause') drawPause();
   else if (state === 'menu') drawMenu();
