@@ -11,6 +11,7 @@ body {
 }
 
 canvas {
+  display: block;
   border: 2px solid #0f3460;
   cursor: pointer;
 }
@@ -18,4 +19,17 @@ canvas {
 .hint {
   margin-top: 12px;
   font-size: 14px;
+}
+
+#wrap:fullscreen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+#wrap:fullscreen canvas {
+  width: min(100vw, 177.78vh);
+  height: auto;
+  border: 0;
 }

@@ -37,6 +37,42 @@ let unlocked = 0;
 let jumpHeld = false;
 try { unlocked = Number(localStorage.getItem(STORAGE_KEY)) || 0; } catch {}
 
+// ---------- audio & options ----------
+
+let audio = null;
+let muted = false;
+try { muted = localStorage.getItem('parkour.muted') === '1'; } catch {}
+
+function initAudio() {
+  if (!audio) audio = new AudioContext();
+  if (audio.state === 'suspended') audio.resume();
+}
+
+function tone(from, to, seconds, type) {
+  if (!audio || muted) return;
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  const now = audio.currentTime;
+  osc.type = type;
+  osc.frequency.setValueAtTime(from, now);
+  osc.frequency.exponentialRampToValueAtTime(to, now + seconds);
+  gain.gain.setValueAtTime(0.15, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + seconds);
+  osc.connect(gain).connect(audio.destination);
+  osc.start(now);
+  osc.stop(now + seconds);
+}
+
+function toggleMute() {
+  muted = !muted;
+  try { localStorage.setItem('parkour.muted', muted ? '1' : '0'); } catch {}
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.getElementById('wrap').requestFullscreen();
+}
+
 // ---------- level generator ----------
 
 function rng(seed) {
@@ -149,6 +185,7 @@ function resetPlayer() {
 function die() {
   attempts++;
   resetPlayer();
+  tone(220, 40, 0.35, 'sawtooth');
 }
 
 function completeLevel() {
@@ -156,6 +193,8 @@ function completeLevel() {
   try { localStorage.setItem(STORAGE_KEY, unlocked); } catch {}
   selected = Math.min(levelIndex + 1, LEVEL_COUNT - 1);
   state = levelIndex + 1 === LEVEL_COUNT ? 'won' : 'menu';
+  tone(500, 1000, 0.15, 'square');
+  setTimeout(() => tone(750, 1500, 0.2, 'square'), 120);
 }
 
 function overlaps(a, b) {
@@ -168,6 +207,7 @@ function update() {
   if (jumpHeld && player.onGround) {
     player.vy = JUMP_FORCE;
     player.onGround = false;
+    tone(300, 700, 0.12, 'square');
   }
   player.vy += GRAVITY;
 
@@ -198,8 +238,26 @@ function update() {
 
 const JUMP_KEYS = ['Space', 'KeyW', 'ArrowUp'];
 
+const PAUSE_ITEMS = [
+  { label: () => 'Wznów', hint: 'Esc', code: 'Escape', action: () => { state = 'play'; } },
+  { label: () => 'Od nowa', hint: 'R', code: 'KeyR', action: () => { attempts = 1; resetPlayer(); state = 'play'; } },
+  { label: () => 'Pełny ekran', hint: 'F', code: 'KeyF', action: toggleFullscreen },
+  { label: () => `Dźwięk: ${muted ? 'wył.' : 'wł.'}`, hint: 'M', code: 'KeyM', action: toggleMute },
+  { label: () => 'Menu główne', hint: 'Q', code: 'KeyQ', action: () => { state = 'menu'; } },
+];
+let pauseSel = 0;
+
+function pause() {
+  state = 'pause';
+  jumpHeld = false;
+  pauseSel = 0;
+}
+
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
+  initAudio();
+  if (e.code === 'KeyF') return toggleFullscreen();
+  if (e.code === 'KeyM') return toggleMute();
   if (state === 'menu') {
     if (e.code === 'ArrowRight') selected = Math.min(LEVEL_COUNT - 1, selected + 1);
     if (e.code === 'ArrowLeft') selected = Math.max(0, selected - 1);
@@ -207,8 +265,14 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'ArrowUp') selected = Math.max(0, selected - 5);
     if ((e.code === 'Enter' || e.code === 'Space') && selected <= unlocked) startLevel(selected);
   } else if (state === 'play') {
-    if (e.code === 'Escape') state = 'menu';
+    if (e.code === 'Escape') pause();
     if (JUMP_KEYS.includes(e.code)) jumpHeld = true;
+  } else if (state === 'pause') {
+    if (e.code === 'ArrowDown') pauseSel = (pauseSel + 1) % PAUSE_ITEMS.length;
+    if (e.code === 'ArrowUp') pauseSel = (pauseSel + PAUSE_ITEMS.length - 1) % PAUSE_ITEMS.length;
+    if (e.code === 'Enter') PAUSE_ITEMS[pauseSel].action();
+    const item = PAUSE_ITEMS.find((it) => it.code === e.code);
+    if (item) item.action();
   } else {
     state = 'menu';
   }
@@ -216,11 +280,15 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => { if (JUMP_KEYS.includes(e.code)) jumpHeld = false; });
 
 function press(pt) {
+  initAudio();
   if (state === 'menu') {
-    const i = tileAt(pt);
+    const i = hitIndex(pt, LEVEL_COUNT, tileRect);
     if (i >= 0 && i <= unlocked) startLevel(i);
   } else if (state === 'play') {
     jumpHeld = true;
+  } else if (state === 'pause') {
+    const k = hitIndex(pt, PAUSE_ITEMS.length, pauseRow);
+    if (k >= 0) PAUSE_ITEMS[k].action();
   } else {
     state = 'menu';
   }
@@ -234,12 +302,16 @@ function tileRect(i) {
   return { x: 100 + (i % 5) * 120, y: 120 + Math.floor(i / 5) * 80, w: 100, h: 60 };
 }
 
-function tileAt(pt) {
+function pauseRow(k) {
+  return { x: 250, y: 130 + k * 50, w: 300, h: 44 };
+}
+
+function hitIndex(pt, count, rectOf) {
   const rect = canvas.getBoundingClientRect();
   const mx = (pt.clientX - rect.left) * canvas.width / rect.width;
   const my = (pt.clientY - rect.top) * canvas.height / rect.height;
-  for (let i = 0; i < LEVEL_COUNT; i++) {
-    const r = tileRect(i);
+  for (let i = 0; i < count; i++) {
+    const r = rectOf(i);
     if (mx >= r.x && mx < r.x + r.w && my >= r.y && my < r.y + r.h) return i;
   }
   return -1;
@@ -461,7 +533,29 @@ function drawMenu() {
 
   ctx.fillStyle = '#aaa';
   ctx.font = '14px sans-serif';
-  ctx.fillText('Kliknij poziom lub strzałki + Enter', canvas.width / 2, 435);
+  ctx.fillText('Kliknij poziom lub strzałki + Enter · F — pełny ekran · M — dźwięk', canvas.width / 2, 435);
+}
+
+function drawPause() {
+  drawGame();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 32px sans-serif';
+  ctx.fillText('PAUZA', canvas.width / 2, 90);
+  ctx.font = '20px sans-serif';
+  PAUSE_ITEMS.forEach((item, k) => {
+    const r = pauseRow(k);
+    const active = k === pauseSel;
+    ctx.fillStyle = active ? theme.cube : 'rgba(255, 255, 255, 0.12)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = active ? INK : '#fff';
+    ctx.textAlign = 'left';
+    ctx.fillText(item.label(), r.x + 16, r.y + 29);
+    ctx.textAlign = 'right';
+    ctx.fillText(item.hint, r.x + r.w - 16, r.y + 29);
+  });
 }
 
 function drawWon() {
@@ -479,6 +573,7 @@ function drawWon() {
 function loop() {
   update();
   if (state === 'play') drawGame();
+  else if (state === 'pause') drawPause();
   else if (state === 'menu') drawMenu();
   else drawWon();
   requestAnimationFrame(loop);
