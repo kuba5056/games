@@ -82,6 +82,41 @@ function cycleSpeed(dir) {
   try { localStorage.setItem('parkour.speed', speedPct); } catch {}
 }
 
+const skinInput = document.getElementById('skin');
+let skin = null;
+
+function setSkin(dataUrl) {
+  if (!dataUrl) {
+    skin = null;
+    try { localStorage.removeItem('parkour.skin'); } catch {}
+    return;
+  }
+  const img = new Image();
+  img.onload = () => { skin = img; };
+  img.src = dataUrl;
+}
+try { setSkin(localStorage.getItem('parkour.skin')); } catch {}
+
+skinInput.addEventListener('change', () => {
+  const file = skinInput.files[0];
+  skinInput.value = '';
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    URL.revokeObjectURL(img.src);
+    const side = Math.min(img.width, img.height);
+    const out = document.createElement('canvas');
+    out.width = out.height = side <= 48 ? 32 : 96;
+    const octx = out.getContext('2d');
+    octx.imageSmoothingEnabled = side > 48;
+    octx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, out.width, out.height);
+    const data = out.toDataURL('image/png');
+    try { localStorage.setItem('parkour.skin', data); } catch {}
+    setSkin(data);
+  };
+  img.src = URL.createObjectURL(file);
+});
+
 function toggleFullscreen() {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.getElementById('wrap').requestFullscreen();
@@ -299,7 +334,10 @@ const PAUSE_ITEMS = [
   { label: () => 'Menu główne', hint: 'Q', code: 'KeyQ', action: () => { state = 'menu'; } },
 ];
 const OPTIONS_ITEMS = [
-  ...OPTION_ITEMS,
+  OPTION_ITEMS[0],
+  { label: () => (skin ? 'Skin: zmień zdjęcie' : 'Skin: wgraj zdjęcie'), hint: '', preview: true, action: () => skinInput.click() },
+  { label: () => 'Skin: domyślna kostka', hint: '', action: () => setSkin(null) },
+  ...OPTION_ITEMS.slice(1),
   { label: () => 'Powrót', hint: 'Esc', code: 'Escape', action: () => { state = 'menu'; } },
 ];
 const SETTINGS_BUTTON = { x: 630, y: 18, w: 150, h: 34 };
@@ -476,6 +514,13 @@ function drawPlayer() {
     ctx.translate(0, 2 * y + SIZE);
     ctx.scale(1, -1);
   }
+  if (skin) {
+    ctx.imageSmoothingEnabled = skin.width > 32;
+    ctx.drawImage(skin, x, y, SIZE, SIZE);
+    ctx.imageSmoothingEnabled = true;
+    ctx.restore();
+    return;
+  }
   ctx.fillStyle = theme.cube;
   ctx.fillRect(x, y, SIZE, SIZE);
 
@@ -637,7 +682,10 @@ function drawMenu() {
 
 function drawPanel() {
   if (state === 'pause') drawGame();
-  else drawMenu();
+  else {
+    ctx.fillStyle = '#16213e';
+    ctx.fillRect(0, 0, W, H);
+  }
   ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
   ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
@@ -655,6 +703,7 @@ function drawPanel() {
     ctx.fillText(item.label(), r.x + 16, r.y + 29);
     ctx.textAlign = 'right';
     ctx.fillText(item.hint, r.x + r.w - 16, r.y + 29);
+    if (item.preview && skin) ctx.drawImage(skin, r.x + r.w - 46, r.y + 7, 30, 30);
   });
 }
 
