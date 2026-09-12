@@ -156,13 +156,16 @@ function physicsOf(p) {
 // onto a ledge dy px higher without clipping its wall; `far` is the longest landing distance.
 function jumpRange(dy, z) {
   if (theme.flip) {
-    // Gravity flip: fall from rest to the opposite surface, which is nearer on one side by |dy|.
+    // Gravity flip: fall from rest to the opposite surface, which is nearer on one side by |dy|;
+    // a step of |dy| must also be cleared before the cube reaches the next column's wall.
     let near = 0;
+    let clear = 0;
     for (let n = 1, y = 0, vy = 0; n < 200; n++) {
       vy += z.gravity;
       y += vy;
+      if (!clear && y >= Math.abs(dy)) clear = n;
       if (!near && y >= CORRIDOR - SIZE - Math.abs(dy)) near = n;
-      if (y >= CORRIDOR - SIZE + Math.abs(dy)) return { min: 0, max: z.speed * near - 4, far: z.speed * n + SIZE };
+      if (y >= CORRIDOR - SIZE + Math.abs(dy)) return { min: dy ? z.speed * (clear + 1) + SIZE : 0, max: z.speed * near - 4, far: z.speed * n + SIZE };
     }
     return null;
   }
@@ -264,11 +267,12 @@ function generateLevel(i) {
         orb = range.orb;
       } else {
         range = jumpRange(dy, zPrev);
-        if (!range) { dy = 0; range = jumpRange(0, zPrev); }
+        if (!range || (theme.flip && range.max + 4 - range.min < 52)) { dy = 0; range = jumpRange(0, zPrev); }
       }
       const margin = Math.max(8, 44 - 32 * t) * zPrev.speed / SPEED;
-      const gapMax = range.max - margin;
-      const gapMin = Math.max(range.min + 8, (40 + 60 * Math.min(t, 1)) * zPrev.speed / SPEED, range.far + 4 - w);
+      // Flipping has a much narrower press window than jumping, so keep flip gaps well below the max.
+      const gapMax = theme.flip ? Math.max(Math.min(range.max * (0.45 + 0.12 * t), range.max - 48), range.min + 8) : range.max - margin;
+      const gapMin = Math.max(range.min + 8, theme.flip ? 30 : (40 + 60 * Math.min(t, 1)) * zPrev.speed / SPEED, range.far + 4 - w);
       const gap = Math.round(spec.far || orb ? gapMax : gapMin >= gapMax ? gapMax : r(gapMin, gapMax));
       lead = Math.max(lead, range.far - gap - 21);
       w = Math.round(Math.max(w, range.far + 4 - gap, count ? spikeWidth(lead) : 0));
