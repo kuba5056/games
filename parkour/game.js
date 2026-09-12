@@ -513,7 +513,7 @@ function press(pt) {
     const tb = hitIndex(pt, 2, tabRect);
     if (tb >= 0) setTab(tb);
   } else if (state === 'play') {
-    jumpHeld = jumpPressed = true;
+    jumpHeld = jumpPressed = orbPressed = true;
   } else if (state === 'pause' || state === 'options') {
     const items = panelItems();
     const k = hitIndex(pt, items.length, pauseRow);
