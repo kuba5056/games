@@ -633,8 +633,17 @@ function drawWon() {
   ctx.fillText('Dowolny klawisz — menu', W / 2, H / 2 + 30);
 }
 
-function loop() {
-  update();
+const TICK = 1000 / 165;
+let last = performance.now();
+let acc = 0;
+
+function loop(now) {
+  acc += Math.min(now - last, 100);
+  last = now;
+  while (acc >= TICK) {
+    update();
+    acc -= TICK;
+  }
   ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
   if (state === 'play') drawGame();
   else if (state === 'pause') drawPause();
@@ -643,4 +652,4 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-loop();
+requestAnimationFrame(loop);
