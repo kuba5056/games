@@ -7,27 +7,37 @@ const JUMP_FORCE = -12;
 const SIZE = 30;
 const SPIKE = 20;
 const LEVEL_COUNT = 20;
+const IMPOSSIBLE_COUNT = 10;
+const TOTAL_LEVELS = LEVEL_COUNT + IMPOSSIBLE_COUNT;
 const STORAGE_KEY = 'parkour.unlocked';
 const INK = '#1a1a2e';
 const CORRIDOR = 250;
 const W = 800;
 const H = 450;
 const SCALE = canvas.width / W;
+const ORB_R = 18;
+
+const ZONES = {
+  fast: { speed: 6, label: '» fast', color: '#ffd23f' },
+  slow: { speed: 2.5, label: '« slow', color: '#7fc8ff' },
+  heavy: { gravity: 1, jump: -15.5, label: '▼ heavy', color: '#ff6f61' },
+  moon: { gravity: 0.3, jump: -9, label: '○ moon', color: '#c8c8ff' },
+};
 
 const THEMES = [
-  { name: 'Słodkie anime', sky: ['#ffd6e8', '#fff0f5'], ground: '#c9a7ff', spike: '#ff6fa8', cube: '#ff8fb8', text: INK, deco: 'heart', face: 'cat', doubleJump: true, rule: 'Podwójny skok' },
-  { name: 'Retro 8-bit', sky: ['#0b0b2a', '#1a1a4a'], ground: '#3adf5a', spike: '#ffe94a', cube: '#ff5a5a', text: '#fff', deco: 'pixel', face: 'pixel', variable: true, rule: 'Przytrzymaj = wyższy skok' },
-  { name: 'Kosmos', sky: ['#000010', '#101040'], ground: '#5a3fa0', spike: '#c8c8ff', cube: '#ffb347', text: '#fff', deco: 'star', face: 'helmet', gravity: 0.3, jump: -9, rule: 'Niska grawitacja' },
+  { name: 'Cute Anime', sky: ['#ffd6e8', '#fff0f5'], ground: '#c9a7ff', spike: '#ff6fa8', cube: '#ff8fb8', text: INK, deco: 'heart', face: 'cat', doubleJump: true, rule: 'Double jump' },
+  { name: 'Retro 8-bit', sky: ['#0b0b2a', '#1a1a4a'], ground: '#3adf5a', spike: '#ffe94a', cube: '#ff5a5a', text: '#fff', deco: 'pixel', face: 'pixel', variable: true, rule: 'Hold to jump higher' },
+  { name: 'Space', sky: ['#000010', '#101040'], ground: '#5a3fa0', spike: '#c8c8ff', cube: '#ffb347', text: '#fff', deco: 'star', face: 'helmet', gravity: 0.3, jump: -9, rule: 'Low gravity' },
   { name: 'Neon', sky: ['#120024', '#2a0050'], ground: '#00e5ff', spike: '#ff00c8', cube: '#faff00', text: '#fff', deco: 'tower', face: 'glasses' },
-  { name: 'Halloween', sky: ['#1a0a00', '#4a2000'], ground: '#ff7a00', spike: '#ffd23f', cube: '#8a2be2', text: '#fff', deco: 'bat', face: 'fangs', dark: true, rule: 'Ciemność' },
-  { name: 'Cukierkowy', sky: ['#bff5e0', '#fff7b0'], ground: '#ff9ecf', spike: '#7b3fe4', cube: '#4ecca3', text: INK, deco: 'ring', face: 'sparkle' },
-  { name: 'Lodowy', sky: ['#dff6ff', '#ffffff'], ground: '#7fc8ff', spike: '#2f6fb0', cube: '#ff6f61', text: INK, deco: 'flake', face: 'hat' },
-  { name: 'Piekło', sky: ['#000000', '#5a0000'], ground: '#401212', spike: '#ff4500', cube: '#ff9f1c', text: '#fff', deco: 'flame', face: 'horns' },
+  { name: 'Halloween', sky: ['#1a0a00', '#4a2000'], ground: '#ff7a00', spike: '#ffd23f', cube: '#8a2be2', text: '#fff', deco: 'bat', face: 'fangs', dark: true, rule: 'Darkness' },
+  { name: 'Candy', sky: ['#bff5e0', '#fff7b0'], ground: '#ff9ecf', spike: '#7b3fe4', cube: '#4ecca3', text: INK, deco: 'ring', face: 'sparkle' },
+  { name: 'Ice', sky: ['#dff6ff', '#ffffff'], ground: '#7fc8ff', spike: '#2f6fb0', cube: '#ff6f61', text: INK, deco: 'flake', face: 'hat' },
+  { name: 'Hell', sky: ['#000000', '#5a0000'], ground: '#401212', spike: '#ff4500', cube: '#ff9f1c', text: '#fff', deco: 'flame', face: 'horns' },
   { name: 'Vaporwave', sky: ['#ff71ce', '#01cdfe'], ground: '#b967ff', spike: '#fffb96', cube: '#05ffa1', text: INK, deco: 'grid', face: 'shades' },
-  { name: 'Demoniczny', sky: ['#000000', '#1a0000'], ground: '#3a0000', spike: '#ffffff', cube: '#e01010', text: '#fff', deco: 'pentagram', face: 'demon', flip: true, rule: 'Skok = odwrócenie grawitacji' },
+  { name: 'Demonic', sky: ['#000000', '#1a0000'], ground: '#3a0000', spike: '#ffffff', cube: '#e01010', text: '#fff', deco: 'pentagram', face: 'demon', flip: true, rule: 'Jump = flip gravity' },
 ];
 
-const player = { x: 0, y: 0, w: SIZE, h: SIZE, vy: 0, dir: 1, airJumps: 0, onGround: false };
+const player = { x: 0, y: 0, w: SIZE, h: SIZE, vy: 0, dir: 1, airJumps: 0, onGround: false, zone: null };
 
 let state = 'menu';
 let levelIndex = 0;
@@ -40,6 +50,9 @@ let selected = 0;
 let unlocked = 0;
 let jumpHeld = false;
 let jumpPressed = false;
+let steps = 0;
+let tab = 0;
+let wonText = '';
 try { unlocked = Number(localStorage.getItem(STORAGE_KEY)) || 0; } catch {}
 
 // ---------- audio & options ----------
@@ -133,32 +146,64 @@ function rng(seed) {
   };
 }
 
+function physicsOf(p) {
+  const z = (p && p.zone && ZONES[p.zone]) || {};
+  return { speed: z.speed ?? SPEED, gravity: z.gravity ?? theme.gravity ?? GRAVITY, jump: z.jump ?? theme.jump ?? JUMP_FORCE };
+}
+
 // Gap range (px) crossable from anywhere on the platform (up to hanging SIZE-1 px over its edge)
 // onto a ledge dy px higher without clipping its wall; `far` is the longest landing distance.
-function jumpRange(dy) {
-  const g = theme.gravity ?? GRAVITY;
+function jumpRange(dy, z) {
   if (theme.flip) {
     // Gravity flip: fall from rest to the opposite surface, which is nearer on one side by |dy|.
     let near = 0;
-    for (let n = 1, y = 0, vy = 0; n < 120; n++) {
-      vy += g;
+    for (let n = 1, y = 0, vy = 0; n < 200; n++) {
+      vy += z.gravity;
       y += vy;
       if (!near && y >= CORRIDOR - SIZE - Math.abs(dy)) near = n;
-      if (y >= CORRIDOR - SIZE + Math.abs(dy)) return { min: 0, max: SPEED * near - 4, far: SPEED * n + SIZE };
+      if (y >= CORRIDOR - SIZE + Math.abs(dy)) return { min: 0, max: z.speed * near - 4, far: z.speed * n + SIZE };
     }
     return null;
   }
   let up = -1;
-  for (let n = 1, y = 0, vy = theme.jump ?? JUMP_FORCE; n < 120; n++) {
-    vy += g;
+  for (let n = 1, y = 0, vy = z.jump; n < 200; n++) {
+    vy += z.gravity;
     y += vy;
     if (y <= -dy && up < 0) up = n;
-    if (y > -dy && up >= 0) return { min: SPEED * up + SIZE, max: SPEED * n - 4, far: SPEED * n + SIZE };
+    if (y > -dy && up >= 0) return { min: z.speed * up + SIZE, max: z.speed * n - 4, far: z.speed * n + SIZE };
   }
   return null;
 }
 
-// Each pattern returns platform specs: { w, dy (ledge rises by dy), spikes, groups, far }.
+// Edge jump with an orb at the apex: landing distances for the earliest and latest frames in
+// which the orb can be pressed, plus the orb position relative to the jump start.
+function orbArc(dy, z) {
+  const pts = [{ x: 0, y: 0 }];
+  let apex = 0;
+  for (let f = 1, vy = z.jump; f < 200; f++) {
+    vy += z.gravity;
+    pts.push({ x: pts[f - 1].x + z.speed, y: pts[f - 1].y + vy });
+    if (!apex && vy >= 0) apex = f;
+    if (apex && pts[f].y > 0) break;
+  }
+  const orb = pts[apex];
+  const land = (f) => {
+    let { x, y } = pts[f];
+    for (let n = f + 1, vy = z.jump; n < 400; n++) {
+      vy += z.gravity;
+      y += vy;
+      x += z.speed;
+      if (vy > 0 && y > -dy) return x;
+    }
+    return Infinity;
+  };
+  const dists = pts.map((q, f) => (f > 0 && Math.hypot(q.x - orb.x, q.y - orb.y) <= ORB_R ? land(f) : null)).filter((d) => d !== null);
+  return { orb: { x: orb.x + SIZE / 2, y: orb.y + SIZE / 2 }, min: 0, max: Math.min(...dists) - 4, far: Math.max(...dists) + SIZE };
+}
+
+const mod = (a, m) => ((a % m) + m) % m;
+
+// Each pattern returns platform specs: { w, dy (ledge rises by dy), spikes, groups, far, zone, blink, orb }.
 const PATTERNS = [
   { from: 0, make: (r, t, i) => [{ w: r(160, 300), spikes: i >= 2 && r() < 0.5 + 0.3 * t ? 1 + Math.floor(r() * (1 + 2 * t)) : 0 }] },
   { from: 0, make: (r, t) => Array.from({ length: 3 + Math.floor(r() * 4) }, () => ({ w: r(40 + 30 * (1 - t), 80 + 40 * (1 - t)), dy: r(-20, 20) })) },
@@ -169,51 +214,96 @@ const PATTERNS = [
   { from: 5, make: (r) => [{ w: r(80, 120), dy: 70 }, { w: r(80, 120), dy: -70 }] },
 ];
 
+const ZONE_NAMES = Object.keys(ZONES);
+const HARD_PATTERNS = [
+  (r) => { const zone = ZONE_NAMES[Math.floor(r() * ZONE_NAMES.length)]; return Array.from({ length: 4 + Math.floor(r() * 3) }, () => ({ w: r(36, 60), dy: r(-25, 25), zone })); },
+  (r) => [{ w: r(80, 120), zone: null }, ...Array.from({ length: 3 + Math.floor(r() * 3) }, () => ({ w: r(50, 90), dy: r(-30, 10), blink: true }))],
+  (r) => [{ w: r(100, 160), zone: null }, ...Array.from({ length: 1 + Math.floor(r() * 3) }, () => ({ w: r(50, 100), dy: r(-40, 0), orb: true }))],
+  (r) => [{ w: r(600, 800), zone: 'fast', spikes: 3 + Math.floor(r() * 2), groups: 3 }],
+  (r) => [...Array.from({ length: 3 }, () => ({ w: r(50, 70), dy: 45, zone: 'heavy' })), { w: r(80, 120), dy: -90, zone: 'moon' }],
+  (r) => [{ w: r(100, 140), zone: null }, { w: r(70, 110), dy: r(-30, 0), orb: true, blink: true }],
+  (r) => [{ w: r(60, 90), zone: 'slow' }, { w: r(40, 60), dy: r(-20, 20), zone: 'fast', blink: true }, { w: r(40, 60), dy: r(-20, 20), zone: 'fast', blink: true }],
+];
+
 function generateLevel(i) {
   const rand = rng(i + 1);
   const r = (a, b) => (a === undefined ? rand() : a + rand() * (b - a));
-  const t = i / (LEVEL_COUNT - 1);
-  const target = 2000 + 4000 * t;
+  const hard = i >= LEVEL_COUNT;
+  const t = hard ? 1 + 0.4 * (i - LEVEL_COUNT) / (IMPOSSIBLE_COUNT - 1) : i / (LEVEL_COUNT - 1);
+  const target = hard ? 5000 + 2500 * (i - LEVEL_COUNT) / (IMPOSSIBLE_COUNT - 1) : 2000 + 4000 * t;
   const platforms = [];
   const spikes = [];
+  const orbs = [];
   let x = 0;
   let y = 420;
+  let zone = null;
 
   function place(spec) {
-    const count = spec.spikes || 0;
+    const prev = platforms[platforms.length - 1];
+    const zPrev = physicsOf(prev);
+    if (spec.zone !== undefined) zone = spec.zone;
+    const z = physicsOf({ zone });
+    const flight = jumpRange(0, z).far - SIZE;
+    const spacing = flight + 60;
+    const count = Math.min(spec.spikes || 0, Math.floor((flight - 70) / SPIKE));
     const groups = count ? spec.groups || 1 : 0;
-    let w = Math.round(spec.w);
-    if (count) w = Math.max(w, 140 + (groups - 1) * 220 + 60 + count * SPIKE + 170);
+    const spikeWidth = (lead) => lead + (groups - 1) * spacing + 60 + count * SPIKE + flight - 10;
+    let w = Math.max(36, Math.round(spec.w));
+    if (count) w = Math.max(w, spikeWidth(140));
+    let lead = 140;
+    let orb = null;
+    let range = null;
 
-    if (platforms.length) {
+    if (prev) {
       let dy = Math.round(Math.max(y - 420, Math.min(y - (theme.flip ? 280 : 150), spec.dy || 0)));
-      let range = jumpRange(dy);
-      if (!range) { dy = 0; range = jumpRange(0); }
-      const gapMax = range.max - (44 - 32 * t);
-      const gapMin = Math.max(range.min + 8, 40 + 60 * t, range.far + 4 - w);
-      const gap = Math.round(spec.far ? gapMax : gapMin >= gapMax ? gapMax : r(gapMin, gapMax));
-      w = Math.max(w, range.far + 4 - gap);
+      const jumpHeight = zPrev.jump * zPrev.jump / (2 * zPrev.gravity);
+      if (spec.orb && y > 2 * jumpHeight + 10) {
+        dy = Math.min(dy, 0);
+        range = orbArc(dy, zPrev);
+        orb = range.orb;
+      } else {
+        range = jumpRange(dy, zPrev);
+        if (!range) { dy = 0; range = jumpRange(0, zPrev); }
+      }
+      const margin = Math.max(8, 44 - 32 * t) * zPrev.speed / SPEED;
+      const gapMax = range.max - margin;
+      const gapMin = Math.max(range.min + 8, (40 + 60 * Math.min(t, 1)) * zPrev.speed / SPEED, range.far + 4 - w);
+      const gap = Math.round(spec.far || orb ? gapMax : gapMin >= gapMax ? gapMax : r(gapMin, gapMax));
+      lead = Math.max(lead, range.far - gap - 21);
+      w = Math.round(Math.max(w, range.far + 4 - gap, count ? spikeWidth(lead) : 0));
+      if (orb) orbs.push({ x: x - SIZE + orb.x, y: y - SIZE + orb.y });
       x += gap;
       y -= dy;
     }
-    platforms.push({ x, y, w, h: H - y });
+
+    const platform = { x, y, w, h: H - y, zone, index: platforms.length };
+    if (spec.blink && prev) {
+      // Timer starts when the cube lands on the previous platform; solid from just before the
+      // earliest possible landing until well after the latest one.
+      const on = Math.floor((range.max + 4) / zPrev.speed) - 6;
+      const off = Math.ceil((prev.w - SIZE) / zPrev.speed + (range.far - SIZE) / zPrev.speed + w / z.speed) + 15;
+      const period = off - on;
+      platform.blink = { period, phase: mod(-on, 2 * period), trigAt: null };
+    }
+    platforms.push(platform);
     for (let g = 0; g < groups; g++) {
-      const sx = x + 140 + g * 220 + Math.round(r(0, 60));
+      const sx = x + lead + g * spacing + Math.round(r(0, 60));
       for (let k = 0; k < count; k++) spikes.push({ x: sx + k * SPIKE, y: y - SPIKE });
     }
     x += w;
   }
 
-  place({ w: 220 });
-  const pool = PATTERNS.filter((p) => i >= p.from);
+  place({ w: 220, zone: null });
+  const pool = PATTERNS.filter((p) => i >= p.from).map((p) => p.make);
   let last = null;
   while (x < target) {
-    let pat = pool[Math.floor(rand() * pool.length)];
-    if (pat === last) pat = pool[(pool.indexOf(pat) + 1) % pool.length];
-    for (const spec of pat.make(r, t, i)) place(spec);
+    const list = hard && rand() < 0.65 ? HARD_PATTERNS : pool;
+    let pat = list[Math.floor(rand() * list.length)];
+    if (pat === last) pat = list[(list.indexOf(pat) + 1) % list.length];
+    for (const spec of pat(r, t, i)) place(spec);
     last = pat;
   }
-  place({ w: 220 });
+  place({ w: 220, zone: null });
 
   const end = platforms[platforms.length - 1];
   const decoRand = rng(i + 100);
@@ -228,7 +318,7 @@ function generateLevel(i) {
     goal.y = end.y - CORRIDOR;
     goal.h = CORRIDOR;
   }
-  return { platforms, spikes, deco, goal };
+  return { platforms, spikes, orbs, deco, goal };
 }
 
 // ---------- game state ----------
@@ -236,6 +326,7 @@ function generateLevel(i) {
 function startLevel(i) {
   levelIndex = i;
   theme = THEMES[i % THEMES.length];
+  if (i >= LEVEL_COUNT) theme = { ...theme, flip: false, doubleJump: false };
   level = generateLevel(i);
   levelWidth = Math.max(...level.platforms.map((p) => p.x + p.w));
   attempts = 1;
@@ -249,6 +340,9 @@ function resetPlayer() {
   player.vy = 0;
   player.dir = 1;
   player.airJumps = 0;
+  player.zone = level.platforms[0];
+  steps = 0;
+  for (const p of level.platforms) if (p.blink) p.blink.trigAt = null;
   camX = 0;
 }
 
@@ -261,8 +355,11 @@ function die() {
 function completeLevel() {
   unlocked = Math.max(unlocked, levelIndex + 1);
   try { localStorage.setItem(STORAGE_KEY, unlocked); } catch {}
-  selected = Math.min(levelIndex + 1, LEVEL_COUNT - 1);
-  state = levelIndex + 1 === LEVEL_COUNT ? 'won' : 'menu';
+  selected = Math.min(levelIndex + 1, TOTAL_LEVELS - 1);
+  tab = selected >= LEVEL_COUNT ? 1 : 0;
+  const done = levelIndex + 1;
+  wonText = done === TOTAL_LEVELS ? 'You beat the impossible!' : 'All 20 levels completed! Impossible mode unlocked.';
+  state = done === LEVEL_COUNT || done === TOTAL_LEVELS ? 'won' : 'menu';
   tone(500, 1000, 0.15, 'square');
   setTimeout(() => tone(750, 1500, 0.2, 'square'), 120);
 }
@@ -271,10 +368,17 @@ function overlaps(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
+function solid(p) {
+  if (!p.blink) return true;
+  const b = p.blink;
+  return b.trigAt !== null && Math.floor((steps - b.trigAt + b.phase) / b.period) % 2 === 0;
+}
+
 function update() {
   if (state !== 'play') return;
+  steps++;
+  const z = physicsOf(player.zone);
 
-  const jump = theme.jump ?? JUMP_FORCE;
   if (theme.flip) {
     if (jumpPressed && player.onGround) {
       player.dir = -player.dir;
@@ -282,31 +386,39 @@ function update() {
       tone(200, 500, 0.15, 'sawtooth');
     }
   } else if (jumpHeld && player.onGround) {
-    player.vy = jump;
+    player.vy = z.jump;
     player.onGround = false;
     player.airJumps = theme.doubleJump ? 1 : 0;
     tone(300, 700, 0.12, 'square');
   } else if (jumpPressed && player.airJumps > 0) {
-    player.vy = jump;
+    player.vy = z.jump;
     player.airJumps--;
     tone(500, 1000, 0.12, 'square');
+  } else if (jumpPressed && !player.onGround && level.orbs.some((o) => Math.hypot(player.x + SIZE / 2 - o.x, player.y + SIZE / 2 - o.y) <= ORB_R)) {
+    player.vy = z.jump;
+    tone(600, 1200, 0.15, 'square');
   }
   if (theme.variable && !jumpHeld && player.vy < -4) player.vy = -4;
   jumpPressed = false;
-  player.vy += (theme.gravity ?? GRAVITY) * player.dir;
+  player.vy += z.gravity * player.dir;
 
-  player.x += SPEED;
+  player.x += z.speed;
   for (const p of level.platforms) {
-    if (overlaps(player, p)) return die();
+    if (solid(p) && overlaps(player, p)) return die();
   }
 
   player.y += player.vy;
   player.onGround = false;
   for (const p of level.platforms) {
-    if (!overlaps(player, p)) continue;
+    if (!solid(p) || !overlaps(player, p)) continue;
+    const inside = player.dir > 0 ? player.y + SIZE - player.vy > p.y + 1 : player.y - player.vy < p.y + p.h - 1;
+    if (p.blink && inside) return die();
     player.y = player.dir > 0 ? p.y - SIZE : p.y + p.h;
     player.vy = 0;
     player.onGround = true;
+    player.zone = p;
+    const next = level.platforms[p.index + 1];
+    if (next && next.blink && next.blink.trigAt === null) next.blink.trigAt = steps;
   }
 
   for (const s of level.spikes) {
@@ -323,22 +435,22 @@ function update() {
 const JUMP_KEYS = ['Space', 'KeyW', 'ArrowUp'];
 
 const OPTION_ITEMS = [
-  { label: () => `Prędkość gry: ${speedPct}%`, hint: '← →', action: () => cycleSpeed(1), adjust: cycleSpeed },
-  { label: () => 'Pełny ekran', hint: 'F', code: 'KeyF', action: toggleFullscreen },
-  { label: () => `Dźwięk: ${muted ? 'wył.' : 'wł.'}`, hint: 'M', code: 'KeyM', action: toggleMute },
+  { label: () => `Game speed: ${speedPct}%`, hint: '← →', action: () => cycleSpeed(1), adjust: cycleSpeed },
+  { label: () => 'Fullscreen', hint: 'F', code: 'KeyF', action: toggleFullscreen },
+  { label: () => `Sound: ${muted ? 'off' : 'on'}`, hint: 'M', code: 'KeyM', action: toggleMute },
 ];
 const PAUSE_ITEMS = [
-  { label: () => 'Wznów', hint: 'Esc', code: 'Escape', action: () => { state = 'play'; } },
-  { label: () => 'Od nowa', hint: 'R', code: 'KeyR', action: () => { attempts = 1; resetPlayer(); state = 'play'; } },
+  { label: () => 'Resume', hint: 'Esc', code: 'Escape', action: () => { state = 'play'; } },
+  { label: () => 'Restart', hint: 'R', code: 'KeyR', action: () => { attempts = 1; resetPlayer(); state = 'play'; } },
   ...OPTION_ITEMS,
-  { label: () => 'Menu główne', hint: 'Q', code: 'KeyQ', action: () => { state = 'menu'; } },
+  { label: () => 'Main menu', hint: 'Q', code: 'KeyQ', action: () => { state = 'menu'; } },
 ];
 const OPTIONS_ITEMS = [
   OPTION_ITEMS[0],
-  { label: () => (skin ? 'Skin: zmień zdjęcie' : 'Skin: wgraj zdjęcie'), hint: '', preview: true, action: () => skinInput.click() },
-  { label: () => 'Skin: domyślna kostka', hint: '', action: () => setSkin(null) },
+  { label: () => (skin ? 'Skin: change photo' : 'Skin: upload photo'), hint: '', preview: true, action: () => skinInput.click() },
+  { label: () => 'Skin: default cube', hint: '', action: () => setSkin(null) },
   ...OPTION_ITEMS.slice(1),
-  { label: () => 'Powrót', hint: 'Esc', code: 'Escape', action: () => { state = 'menu'; } },
+  { label: () => 'Back', hint: 'Esc', code: 'Escape', action: () => { state = 'menu'; } },
 ];
 const SETTINGS_BUTTON = { x: 630, y: 18, w: 150, h: 34 };
 let pauseSel = 0;
@@ -359,10 +471,13 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') return toggleFullscreen();
   if (e.code === 'KeyM') return toggleMute();
   if (state === 'menu') {
-    if (e.code === 'ArrowRight') selected = Math.min(LEVEL_COUNT - 1, selected + 1);
-    if (e.code === 'ArrowLeft') selected = Math.max(0, selected - 1);
-    if (e.code === 'ArrowDown') selected = Math.min(LEVEL_COUNT - 1, selected + 5);
-    if (e.code === 'ArrowUp') selected = Math.max(0, selected - 5);
+    const lo = tab ? LEVEL_COUNT : 0;
+    const hi = tab ? TOTAL_LEVELS - 1 : LEVEL_COUNT - 1;
+    if (e.code === 'ArrowRight') selected = Math.min(hi, selected + 1);
+    if (e.code === 'ArrowLeft') selected = Math.max(lo, selected - 1);
+    if (e.code === 'ArrowDown') selected = Math.min(hi, selected + 5);
+    if (e.code === 'ArrowUp') selected = Math.max(lo, selected - 5);
+    if (e.code === 'Tab') { e.preventDefault(); setTab(1 - tab); }
     if ((e.code === 'Enter' || e.code === 'Space') && selected <= unlocked) startLevel(selected);
     if (e.code === 'KeyS') openPanel('options');
   } else if (state === 'play') {
@@ -387,9 +502,12 @@ window.addEventListener('keyup', (e) => { if (JUMP_KEYS.includes(e.code)) jumpHe
 function press(pt) {
   initAudio();
   if (state === 'menu') {
-    const i = hitIndex(pt, LEVEL_COUNT, tileRect);
-    if (i >= 0 && i <= unlocked) startLevel(i);
+    const base = tab ? LEVEL_COUNT : 0;
+    const i = hitIndex(pt, tab ? IMPOSSIBLE_COUNT : LEVEL_COUNT, (k) => tileRect(base + k));
+    if (i >= 0 && base + i <= unlocked) startLevel(base + i);
     if (hitIndex(pt, 1, () => SETTINGS_BUTTON) === 0) openPanel('options');
+    const tb = hitIndex(pt, 2, tabRect);
+    if (tb >= 0) setTab(tb);
   } else if (state === 'play') {
     jumpHeld = jumpPressed = true;
   } else if (state === 'pause' || state === 'options') {
@@ -406,7 +524,18 @@ window.addEventListener('mouseup', () => { jumpHeld = false; });
 window.addEventListener('touchend', () => { jumpHeld = false; });
 
 function tileRect(i) {
-  return { x: 100 + (i % 5) * 120, y: 100 + Math.floor(i / 5) * 80, w: 100, h: 60 };
+  const k = i >= LEVEL_COUNT ? i - LEVEL_COUNT : i;
+  return { x: 100 + (k % 5) * 120, y: 104 + Math.floor(k / 5) * 80, w: 100, h: 60 };
+}
+
+function tabRect(k) {
+  return { x: 230 + k * 180, y: 62, w: 160, h: 28 };
+}
+
+function setTab(k) {
+  tab = k;
+  selected = tab ? Math.max(LEVEL_COUNT, Math.min(selected, TOTAL_LEVELS - 1)) : Math.min(selected, LEVEL_COUNT - 1);
+  if (tab && selected < LEVEL_COUNT) selected = LEVEL_COUNT;
 }
 
 function pauseRow(k) {
@@ -593,8 +722,40 @@ function drawGame() {
   ctx.save();
   ctx.translate(-camX, 0);
 
-  ctx.fillStyle = theme.ground;
-  for (const p of level.platforms) ctx.fillRect(p.x, p.y, p.w, p.h);
+  for (const p of level.platforms) {
+    if (!solid(p)) {
+      ctx.strokeStyle = theme.ground;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.globalAlpha = 0.4;
+      ctx.strokeRect(p.x + 1, p.y + 1, p.w - 2, p.h - 2);
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    ctx.fillStyle = theme.ground;
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    if (p.zone && p.y > 0) {
+      const zn = ZONES[p.zone];
+      ctx.fillStyle = zn.color;
+      ctx.fillRect(p.x, p.y, p.w, 6);
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(zn.label, p.x + p.w / 2, p.y + 22);
+    }
+  }
+
+  for (const o of level.orbs) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+    dot(o.x, o.y, ORB_R);
+    ctx.fillStyle = '#fff';
+    dot(o.x, o.y, 8);
+    ctx.strokeStyle = theme.spike;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, 12, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   ctx.fillStyle = theme.spike;
   for (const s of level.spikes) tri(s.x, s.y + SPIKE, s.x + SPIKE / 2, s.y, s.x + SPIKE, s.y + SPIKE);
@@ -621,13 +782,14 @@ function drawGame() {
   ctx.fillStyle = theme.text;
   ctx.font = '16px sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText(`Poziom ${levelIndex + 1} · ${theme.name}`, 12, 24);
+  const title = levelIndex >= LEVEL_COUNT ? `Impossible ${levelIndex - LEVEL_COUNT + 1}` : `Level ${levelIndex + 1}`;
+  ctx.fillText(`${title} · ${theme.name}`, 12, 24);
   if (theme.rule) {
     ctx.font = '13px sans-serif';
     ctx.fillText(theme.rule, 12, 44);
   }
   ctx.textAlign = 'right';
-  ctx.fillText(`Próba ${attempts}`, W - 12, 24);
+  ctx.fillText(`Attempt ${attempts}`, W - 12, 24);
 }
 
 function drawMenu() {
@@ -635,21 +797,38 @@ function drawMenu() {
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#eee';
   ctx.textAlign = 'center';
-  ctx.font = 'bold 36px sans-serif';
-  ctx.fillText('PARKOUR', W / 2, 62);
+  ctx.font = 'bold 32px sans-serif';
+  ctx.fillText('PARKOUR', W / 2, 46);
 
   const b = SETTINGS_BUTTON;
   ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
   ctx.fillRect(b.x, b.y, b.w, b.h);
   ctx.fillStyle = '#eee';
   ctx.font = '16px sans-serif';
-  ctx.fillText('Ustawienia (S)', b.x + b.w / 2, b.y + 23);
+  ctx.fillText('Settings (S)', b.x + b.w / 2, b.y + 23);
 
-  for (let i = 0; i < LEVEL_COUNT; i++) {
+  ['Levels', 'Impossible'].forEach((name, k) => {
+    const r = tabRect(k);
+    ctx.fillStyle = k === tab ? (k ? '#e01010' : '#4ecca3') : 'rgba(255, 255, 255, 0.12)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = k === tab ? INK : '#eee';
+    ctx.font = 'bold 15px sans-serif';
+    ctx.fillText(name, r.x + r.w / 2, r.y + 19);
+  });
+
+  const base = tab ? LEVEL_COUNT : 0;
+  const count = tab ? IMPOSSIBLE_COUNT : LEVEL_COUNT;
+  for (let k = 0; k < count; k++) {
+    const i = base + k;
     const r = tileRect(i);
     const open = i <= unlocked;
     ctx.fillStyle = open ? THEMES[i % THEMES.length].cube : '#2a2a4a';
     ctx.fillRect(r.x, r.y, r.w, r.h);
+    if (tab && open) {
+      ctx.strokeStyle = '#e01010';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(r.x + 1.5, r.y + 1.5, r.w - 3, r.h - 3);
+    }
     if (i === selected) {
       ctx.strokeStyle = '#4ecca3';
       ctx.lineWidth = 3;
@@ -658,7 +837,7 @@ function drawMenu() {
     if (open) {
       ctx.fillStyle = INK;
       ctx.font = 'bold 24px sans-serif';
-      ctx.fillText(i + 1, r.x + r.w / 2, r.y + r.h / 2 + 9);
+      ctx.fillText(k + 1, r.x + r.w / 2, r.y + r.h / 2 + 9);
     } else {
       const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
       ctx.fillStyle = '#666';
@@ -674,10 +853,15 @@ function drawMenu() {
   const th = THEMES[selected % THEMES.length];
   ctx.fillStyle = '#eee';
   ctx.font = '16px sans-serif';
-  ctx.fillText(`${selected + 1}. ${th.name}${th.rule ? ' — ' + th.rule : ''}`, W / 2, 420);
+  if (tab) {
+    const desc = unlocked < LEVEL_COUNT ? 'Beat level 20 to unlock' : `Impossible ${selected - LEVEL_COUNT + 1} · ${th.name} — zones, blinking platforms, orbs${th.rule && !['Double jump', 'Jump = flip gravity'].includes(th.rule) ? ', ' + th.rule.toLowerCase() : ''}`;
+    ctx.fillText(desc, W / 2, 300);
+  } else {
+    ctx.fillText(`${selected + 1}. ${th.name}${th.rule ? ' — ' + th.rule : ''}`, W / 2, 420);
+  }
   ctx.fillStyle = '#aaa';
   ctx.font = '14px sans-serif';
-  ctx.fillText('Kliknij poziom lub strzałki + Enter · S — ustawienia · F — pełny ekran · M — dźwięk', W / 2, 442);
+  ctx.fillText('Click a level or use arrows + Enter · Tab — switch section · S — settings · F — fullscreen · M — sound', W / 2, 442);
 }
 
 function drawPanel() {
@@ -691,7 +875,7 @@ function drawPanel() {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 32px sans-serif';
-  ctx.fillText(state === 'pause' ? 'PAUZA' : 'USTAWIENIA', W / 2, 90);
+  ctx.fillText(state === 'pause' ? 'PAUSED' : 'SETTINGS', W / 2, 90);
   ctx.font = '20px sans-serif';
   panelItems().forEach((item, k) => {
     const r = pauseRow(k);
@@ -712,11 +896,11 @@ function drawWon() {
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#4ecca3';
   ctx.textAlign = 'center';
-  ctx.font = 'bold 40px sans-serif';
-  ctx.fillText('Wszystkie poziomy ukończone!', W / 2, H / 2 - 10);
+  ctx.font = 'bold 32px sans-serif';
+  ctx.fillText(wonText, W / 2, H / 2 - 10);
   ctx.fillStyle = '#eee';
   ctx.font = '18px sans-serif';
-  ctx.fillText('Dowolny klawisz — menu', W / 2, H / 2 + 30);
+  ctx.fillText('Any key — menu', W / 2, H / 2 + 30);
 }
 
 let last = performance.now();
