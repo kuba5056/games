@@ -50,6 +50,7 @@ let selected = 0;
 let unlocked = 0;
 let jumpHeld = false;
 let jumpPressed = false;
+let orbPressed = false;
 let steps = 0;
 let tab = 0;
 let wonText = '';
@@ -394,12 +395,12 @@ function update() {
     player.vy = z.jump;
     player.airJumps--;
     tone(500, 1000, 0.12, 'square');
-  } else if (jumpPressed && !player.onGround && level.orbs.some((o) => Math.hypot(player.x + SIZE / 2 - o.x, player.y + SIZE / 2 - o.y) <= ORB_R)) {
+  } else if (orbPressed && !player.onGround && level.orbs.some((o) => Math.hypot(player.x + SIZE / 2 - o.x, player.y + SIZE / 2 - o.y) <= ORB_R)) {
     player.vy = z.jump;
     tone(600, 1200, 0.15, 'square');
   }
   if (theme.variable && !jumpHeld && player.vy < -4) player.vy = -4;
-  jumpPressed = false;
+  jumpPressed = orbPressed = false;
   player.vy += z.gravity * player.dir;
 
   player.x += z.speed;
@@ -482,7 +483,7 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyS') openPanel('options');
   } else if (state === 'play') {
     if (e.code === 'Escape') openPanel('pause');
-    if (JUMP_KEYS.includes(e.code)) jumpHeld = jumpPressed = true;
+    if (JUMP_KEYS.includes(e.code)) jumpHeld = jumpPressed = orbPressed = true;
   } else if (state === 'pause' || state === 'options') {
     const items = panelItems();
     const cur = items[pauseSel];
