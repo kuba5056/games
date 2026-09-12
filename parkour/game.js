@@ -34,7 +34,6 @@ const THEMES = [
   { name: 'Ice', sky: ['#dff6ff', '#ffffff'], ground: '#7fc8ff', spike: '#2f6fb0', cube: '#ff6f61', text: INK, deco: 'flake', face: 'hat' },
   { name: 'Hell', sky: ['#000000', '#5a0000'], ground: '#401212', spike: '#ff4500', cube: '#ff9f1c', text: '#fff', deco: 'flame', face: 'horns' },
   { name: 'Vaporwave', sky: ['#ff71ce', '#01cdfe'], ground: '#b967ff', spike: '#fffb96', cube: '#05ffa1', text: INK, deco: 'grid', face: 'shades' },
-  { name: 'Demonic', sky: ['#000000', '#1a0000'], ground: '#3a0000', spike: '#ffffff', cube: '#e01010', text: '#fff', deco: 'pentagram', face: 'demon', flip: true, rule: 'Jump = flip gravity' },
 ];
 
 const player = { x: 0, y: 0, w: SIZE, h: SIZE, vy: 0, dir: 1, airJumps: 0, onGround: false, zone: null };
