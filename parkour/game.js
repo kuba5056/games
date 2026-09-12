@@ -73,6 +73,15 @@ function toggleMute() {
   try { localStorage.setItem('parkour.muted', muted ? '1' : '0'); } catch {}
 }
 
+const SPEEDS = [50, 75, 100, 125, 150];
+let speedPct = 100;
+try { speedPct = SPEEDS.includes(Number(localStorage.getItem('parkour.speed'))) ? Number(localStorage.getItem('parkour.speed')) : 100; } catch {}
+
+function cycleSpeed(dir) {
+  speedPct = SPEEDS[(SPEEDS.indexOf(speedPct) + dir + SPEEDS.length) % SPEEDS.length];
+  try { localStorage.setItem('parkour.speed', speedPct); } catch {}
+}
+
 function toggleFullscreen() {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.getElementById('wrap').requestFullscreen();
@@ -278,17 +287,30 @@ function update() {
 
 const JUMP_KEYS = ['Space', 'KeyW', 'ArrowUp'];
 
+const OPTION_ITEMS = [
+  { label: () => `Prędkość gry: ${speedPct}%`, hint: '← →', action: () => cycleSpeed(1), adjust: cycleSpeed },
+  { label: () => 'Pełny ekran', hint: 'F', code: 'KeyF', action: toggleFullscreen },
+  { label: () => `Dźwięk: ${muted ? 'wył.' : 'wł.'}`, hint: 'M', code: 'KeyM', action: toggleMute },
+];
 const PAUSE_ITEMS = [
   { label: () => 'Wznów', hint: 'Esc', code: 'Escape', action: () => { state = 'play'; } },
   { label: () => 'Od nowa', hint: 'R', code: 'KeyR', action: () => { attempts = 1; resetPlayer(); state = 'play'; } },
-  { label: () => 'Pełny ekran', hint: 'F', code: 'KeyF', action: toggleFullscreen },
-  { label: () => `Dźwięk: ${muted ? 'wył.' : 'wł.'}`, hint: 'M', code: 'KeyM', action: toggleMute },
+  ...OPTION_ITEMS,
   { label: () => 'Menu główne', hint: 'Q', code: 'KeyQ', action: () => { state = 'menu'; } },
 ];
+const OPTIONS_ITEMS = [
+  ...OPTION_ITEMS,
+  { label: () => 'Powrót', hint: 'Esc', code: 'Escape', action: () => { state = 'menu'; } },
+];
+const SETTINGS_BUTTON = { x: 630, y: 18, w: 150, h: 34 };
 let pauseSel = 0;
 
-function pause() {
-  state = 'pause';
+function panelItems() {
+  return state === 'pause' ? PAUSE_ITEMS : OPTIONS_ITEMS;
+}
+
+function openPanel(next) {
+  state = next;
   jumpHeld = false;
   pauseSel = 0;
 }
@@ -304,14 +326,19 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'ArrowDown') selected = Math.min(LEVEL_COUNT - 1, selected + 5);
     if (e.code === 'ArrowUp') selected = Math.max(0, selected - 5);
     if ((e.code === 'Enter' || e.code === 'Space') && selected <= unlocked) startLevel(selected);
+    if (e.code === 'KeyS') openPanel('options');
   } else if (state === 'play') {
-    if (e.code === 'Escape') pause();
+    if (e.code === 'Escape') openPanel('pause');
     if (JUMP_KEYS.includes(e.code)) jumpHeld = jumpPressed = true;
-  } else if (state === 'pause') {
-    if (e.code === 'ArrowDown') pauseSel = (pauseSel + 1) % PAUSE_ITEMS.length;
-    if (e.code === 'ArrowUp') pauseSel = (pauseSel + PAUSE_ITEMS.length - 1) % PAUSE_ITEMS.length;
-    if (e.code === 'Enter') PAUSE_ITEMS[pauseSel].action();
-    const item = PAUSE_ITEMS.find((it) => it.code === e.code);
+  } else if (state === 'pause' || state === 'options') {
+    const items = panelItems();
+    const cur = items[pauseSel];
+    if (e.code === 'ArrowDown') pauseSel = (pauseSel + 1) % items.length;
+    if (e.code === 'ArrowUp') pauseSel = (pauseSel + items.length - 1) % items.length;
+    if (e.code === 'ArrowRight' && cur.adjust) cur.adjust(1);
+    if (e.code === 'ArrowLeft' && cur.adjust) cur.adjust(-1);
+    if (e.code === 'Enter') cur.action();
+    const item = items.find((it) => it.code === e.code);
     if (item) item.action();
   } else {
     state = 'menu';
@@ -324,11 +351,13 @@ function press(pt) {
   if (state === 'menu') {
     const i = hitIndex(pt, LEVEL_COUNT, tileRect);
     if (i >= 0 && i <= unlocked) startLevel(i);
+    if (hitIndex(pt, 1, () => SETTINGS_BUTTON) === 0) openPanel('options');
   } else if (state === 'play') {
     jumpHeld = jumpPressed = true;
-  } else if (state === 'pause') {
-    const k = hitIndex(pt, PAUSE_ITEMS.length, pauseRow);
-    if (k >= 0) PAUSE_ITEMS[k].action();
+  } else if (state === 'pause' || state === 'options') {
+    const items = panelItems();
+    const k = hitIndex(pt, items.length, pauseRow);
+    if (k >= 0) { pauseSel = k; items[k].action(); }
   } else {
     state = 'menu';
   }
@@ -564,6 +593,13 @@ function drawMenu() {
   ctx.font = 'bold 36px sans-serif';
   ctx.fillText('PARKOUR', W / 2, 62);
 
+  const b = SETTINGS_BUTTON;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.fillRect(b.x, b.y, b.w, b.h);
+  ctx.fillStyle = '#eee';
+  ctx.font = '16px sans-serif';
+  ctx.fillText('Ustawienia (S)', b.x + b.w / 2, b.y + 23);
+
   for (let i = 0; i < LEVEL_COUNT; i++) {
     const r = tileRect(i);
     const open = i <= unlocked;
@@ -596,22 +632,23 @@ function drawMenu() {
   ctx.fillText(`${selected + 1}. ${th.name}${th.rule ? ' — ' + th.rule : ''}`, W / 2, 420);
   ctx.fillStyle = '#aaa';
   ctx.font = '14px sans-serif';
-  ctx.fillText('Kliknij poziom lub strzałki + Enter · F — pełny ekran · M — dźwięk', W / 2, 442);
+  ctx.fillText('Kliknij poziom lub strzałki + Enter · S — ustawienia · F — pełny ekran · M — dźwięk', W / 2, 442);
 }
 
-function drawPause() {
-  drawGame();
+function drawPanel() {
+  if (state === 'pause') drawGame();
+  else drawMenu();
   ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
   ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 32px sans-serif';
-  ctx.fillText('PAUZA', W / 2, 90);
+  ctx.fillText(state === 'pause' ? 'PAUZA' : 'USTAWIENIA', W / 2, 90);
   ctx.font = '20px sans-serif';
-  PAUSE_ITEMS.forEach((item, k) => {
+  panelItems().forEach((item, k) => {
     const r = pauseRow(k);
     const active = k === pauseSel;
-    ctx.fillStyle = active ? theme.cube : 'rgba(255, 255, 255, 0.12)';
+    ctx.fillStyle = active ? (state === 'pause' ? theme.cube : '#4ecca3') : 'rgba(255, 255, 255, 0.12)';
     ctx.fillRect(r.x, r.y, r.w, r.h);
     ctx.fillStyle = active ? INK : '#fff';
     ctx.textAlign = 'left';
@@ -633,20 +670,20 @@ function drawWon() {
   ctx.fillText('Dowolny klawisz — menu', W / 2, H / 2 + 30);
 }
 
-const TICK = 1000 / 165;
 let last = performance.now();
 let acc = 0;
 
 function loop(now) {
   acc += Math.min(now - last, 100);
   last = now;
-  while (acc >= TICK) {
+  const tick = 1000 / (165 * speedPct / 100);
+  while (acc >= tick) {
     update();
-    acc -= TICK;
+    acc -= tick;
   }
   ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
   if (state === 'play') drawGame();
-  else if (state === 'pause') drawPause();
+  else if (state === 'pause' || state === 'options') drawPanel();
   else if (state === 'menu') drawMenu();
   else drawWon();
   requestAnimationFrame(loop);
