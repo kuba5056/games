@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Femboy Crush</title>
+<style>
+  :root {
+    --bg1: #1a0b2e;
+    --bg2: #3b0f4f;
+    --pink: #ff7ad9;
+    --pink2: #ffb6f0;
+    --white: #fff4fb;
+    --tile: 64px;
+    --gap: 6px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: var(--white);
+    background: radial-gradient(circle at 20% 10%, #5b1a7a 0, transparent 40%),
+                radial-gradient(circle at 80% 90%, #7a1a5b 0, transparent 40%),
+                linear-gradient(160deg, var(--bg1), var(--bg2));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+    user-select: none;
+  }
+  h1 {
+    margin: 8px 0 4px;
+    font-size: 2.2rem;
+    letter-spacing: 2px;
+    background: linear-gradient(90deg, var(--pink), #b388ff, var(--pink));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 24px rgba(255, 122, 217, .35);
+  }
+  .sub { margin: 0 0 12px; opacity: .8; font-size: .9rem; }
+  .hud {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 12px;
+  }
+  .stat {
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,182,240,.35);
+    border-radius: 12px;
+    padding: 8px 16px;
+    min-width: 110px;
+    text-align: center;
+  }
+  .stat .label { font-size: .7rem; text-transform: uppercase; letter-spacing: 1px; opacity: .7; }
+  .stat .value { font-size: 1.4rem; font-weight: 700; color: var(--pink2); }
+  #board {
+    display: grid;
+    grid-template-columns: repeat(8, var(--tile));
+    grid-template-rows: repeat(8, var(--tile));
+    gap: var(--gap);
+    padding: var(--gap);
+    background: rgba(0,0,0,.35);
+    border-radius: 16px;
+    border: 2px solid rgba(255,122,217,.5);
+    box-shadow: 0 0 40px rgba(255,122,217,.25), inset 0 0 30px rgba(0,0,0,.4);
+    position: relative;
+    touch-action: none;
+  }
+  .tile {
+    width: var(--tile);
+    height: var(--tile);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+    transition: transform .18s ease, opacity .25s ease, box-shadow .15s;
+    box-shadow: 0 2px 6px rgba(0,0,0,.5);
+    background-size: cover;
+    background-position: center top;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+  }
+  .tile:hover { transform: scale(1.06); }
+  .tile.selected {
+    transform: scale(1.1);
+    box-shadow: 0 0 0 3px var(--pink), 0 0 20px var(--pink);
+    z-index: 2;
+  }
+  .tile.matched {
+    animation: pop .35s ease forwards;
+  }
+  .tile.fall { animation: drop .3s ease-out; }
+  .tile.shake { animation: shake .3s; }
+  .tile.hint { animation: hint 1s infinite; }
+  @keyframes pop {
+    0% { transform: scale(1); opacity: 1; }
+    60% { transform: scale(1.3) rotate(8deg); opacity: .9; filter: brightness(1.8); }
+    100% { transform: scale(0); opacity: 0; }
+  }
+  @keyframes drop {
+    from { transform: translateY(-70px); opacity: .3; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+  @keyframes hint {
+    0%,100% { box-shadow: 0 0 0 0 rgba(255,122,217,0); }
+    50% { box-shadow: 0 0 0 4px rgba(255,122,217,.9); }
+  }
+  .heart {
+    position: absolute;
+    pointer-events: none;
+    font-size: 1.4rem;
+    animation: floatUp 1s ease-out forwards;
+    z-index: 5;
+  }
+  @keyframes floatUp {
+    from { transform: translateY(0) scale(1); opacity: 1; }
+    to { transform: translateY(-80px) scale(1.6); opacity: 0; }
+  }
+  .combo {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 2.4rem;
+    font-weight: 900;
+    color: var(--pink2);
+    text-shadow: 0 0 20px var(--pink);
+    pointer-events: none;
+    animation: comboPop .8s ease-out forwards;
+    z-index: 6;
+  }
+  @keyframes comboPop {
+    0% { transform: translate(-50%,-50%) scale(.4); opacity: 0; }
+    30% { transform: translate(-50%,-50%) scale(1.2); opacity: 1; }
+    100% { transform: translate(-50%,-90%) scale(1); opacity: 0; }
+  }
+  .controls { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  button {
+    background: linear-gradient(135deg, var(--pink), #c46bff);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(255,122,217,.4);
+    transition: transform .1s;
+  }
+  button:hover { transform: translateY(-2px); }
+  button:active { transform: translateY(1px); }
+  #overlay {
+    position: fixed; inset: 0;
+    background: rgba(10,0,20,.85);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  #overlay.show { display: flex; }
+  .card {
+    background: linear-gradient(160deg, #2b0f45, #4a1560);
+    border: 2px solid var(--pink);
+    border-radius: 20px;
+    padding: 28px 36px;
+    text-align: center;
+    max-width: 90vw;
+    box-shadow: 0 0 60px rgba(255,122,217,.4);
+  }
+  .card h2 { margin: 0 0 8px; font-size: 2rem; color: var(--pink2); }
+  .card p { margin: 6px 0 18px; font-size: 1.1rem; }
+  .legend {
+    display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; justify-content: center;
+  }
+  .legend .tile { width: 44px; height: 44px; font-size: 1.3rem; cursor: default; }
+  .legend .tile:hover { transform: none; }
+  .note { font-size: .75rem; opacity: .6; margin-top: 10px; max-width: 560px; text-align: center; }
+  @media (max-width: 640px) {
+    :root { --tile: calc((100vw - 60px) / 8); --gap: 4px; }
+    h1 { font-size: 1.6rem; }
+    .tile { border-radius: 8px; font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+  <h1>💗 FEMBOY CRUSH 💗</h1>
+  <p class="sub">Ułóż 3 lub więcej takich samych chłopców w rzędzie lub kolumnie</p>
+
+  <div class="hud">
+    <div class="stat"><div class="label">Wynik</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">Ruchy</div><div class="value" id="moves">30</div></div>
+    <div class="stat"><div class="label">Cel</div><div class="value" id="target">1000</div></div>
+    <div class="stat"><div class="label">Poziom</div><div class="value" id="level">1</div></div>
+  </div>
+
+  <div id="board"></div>
+
+  <div class="controls">
+    <button id="hintBtn">💡 Podpowiedź</button>
+    <button id="shuffleBtn">🔀 Przetasuj (−5 ruchów)</button>
+    <button id="restartBtn">🔁 Od nowa</button>
+  </div>
+
+  <div class="legend" id="legend"></div>
+  <p class="note">Obrazki wczytywane są z folderu <b>img/</b> (femboy1.png … femboy5.png). Jeśli pliku brakuje, kafelek pokazuje kolor i emoji zastępcze.</p>
+
+  <div id="overlay">
+    <div class="card">
+      <h2 id="ovTitle">Koniec!</h2>
+      <p id="ovText"></p>
+      <button id="ovBtn">Dalej</button>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const SIZE = 8;
+  const TYPES = [
+    { name: 'Pinky',   file: 'img/femboy1.png', color: 'linear-gradient(135deg,#ff6fd8,#c04bff)', emoji: '💜' },
+    { name: 'Goth',    file: 'img/femboy2.png', color: 'linear-gradient(135deg,#444,#8a6a9a)',    emoji: '🖤' },
+    { name: 'Kitty',   file: 'img/femboy3.png', color: 'linear-gradient(135deg,#6fc3ff,#4b6bff)', emoji: '🐱' },
+    { name: 'Puppy',   file: 'img/femboy4.png', color: 'linear-gradient(135deg,#8ff0ff,#5ad0e6)', emoji: '🐶' },
+    { name: 'Sleepy',  file: 'img/femboy5.png', color: 'linear-gradient(135deg,#ffc2e6,#ff8ac5)', emoji: '🎀' },
+  ];
+  const imgOk = TYPES.map(() => false);
+
+  const boardEl = document.getElementById('board');
+  const scoreEl = document.getElementById('score');
+  const movesEl = document.getElementById('moves');
+  const targetEl = document.getElementById('target');
+  const levelEl = document.getElementById('level');
+  const overlay = document.getElementById('overlay');
+  const ovTitle = document.getElementById('ovTitle');
+  const ovText = document.getElementById('ovText');
+  const ovBtn = document.getElementById('ovBtn');
+
+  let grid = [];       // grid[r][c] = type index
+  let cells = [];      // DOM tiles
+  let score = 0, moves = 30, target = 1000, level = 1;
+  let selected = null; // {r,c}
+  let busy = false;
+  let dragStart = null;
+
+  // ---------- image preload with fallback ----------
+  function preload() {
+    return Promise.all(TYPES.map((t, i) => new Promise(res => {
+      const im = new Image();
+      im.onload = () => { imgOk[i] = true; res(); };
+      im.onerror = () => res();
+      im.src = t.file;
+    })));
+  }
+
+  function styleTile(el, type) {
+    const t = TYPES[type];
+    el.dataset.type = type;
+    el.title = t.name;
+    if (imgOk[type]) {
+      el.style.backgroundImage = `url("${t.file}")`;
+      el.textContent = '';
+    } else {
+      el.style.backgroundImage = t.color;
+      el.textContent = t.emoji;
+    }
+  }
+
+  // ---------- board setup ----------
+  function randType() { return Math.floor(Math.random() * TYPES.length); }
+
+  function initGrid() {
+    grid = [];
+    for (let r = 0; r < SIZE; r++) {
+      grid[r] = [];
+      for (let c = 0; c < SIZE; c++) {
+        let t;
+        do { t = randType(); }
+        while ((c >= 2 && grid[r][c-1] === t && grid[r][c-2] === t) ||
+               (r >= 2 && grid[r-1][c] === t && grid[r-2][c] === t));
+        grid[r][c] = t;
+      }
+    }
+    if (!hasMove()) initGrid();
+  }
+
+  function buildDOM() {
+    boardEl.innerHTML = '';
+    cells = [];
+    for (let r = 0; r < SIZE; r++) {
+      cells[r] = [];
+      for (let c = 0; c < SIZE; c++) {
+        const el = document.createElement('div');
+        el.className = 'tile';
+        el.dataset.r = r; el.dataset.c = c;
+        styleTile(el, grid[r][c]);
+        el.addEventListener('pointerdown', onDown);
+        el.addEventListener('pointerup', onUp);
+        boardEl.appendChild(el);
+        cells[r][c] = el;
+      }
+    }
+  }
+
+  function render() {
+    for (let r = 0; r < SIZE; r++)
+      for (let c = 0; c < SIZE; c++) {
+        const el = cells[r][c];
+        el.className = 'tile';
+        styleTile(el, grid[r][c]);
+      }
+    if (selected) cells[selected.r][selected.c].classList.add('selected');
+  }
+
+  // ---------- matching ----------
+  function findMatches(g = grid) {
+    const m = new Set();
+    for (let r = 0; r < SIZE; r++) {
+      let run = 1;
+      for (let c = 1; c <= SIZE; c++) {
+        if (c < SIZE && g[r][c] === g[r][c-1] && g[r][c] !== -1) run++;
+        else { if (run >= 3) for (let k = c - run; k < c; k++) m.add(r*SIZE+k); run = 1; }
+      }
+    }
+    for (let c = 0; c < SIZE; c++) {
+      let run = 1;
+      for (let r = 1; r <= SIZE; r++) {
+        if (r < SIZE && g[r][c] === g[r-1][c] && g[r][c] !== -1) run++;
+        else { if (run >= 3) for (let k = r - run; k < r; k++) m.add(k*SIZE+c); run = 1; }
+      }
+    }
+    return m;
+  }
+
+  function swapIn(g, a, b) {
+    const t = g[a.r][a.c]; g[a.r][a.c] = g[b.r][b.c]; g[b.r][b.c] = t;
+  }
+
+  function wouldMatch(a, b) {
+    swapIn(grid, a, b);
+    const ok = findMatches().size > 0;
+    swapIn(grid, a, b);
+    return ok;
+  }
+
+  function findAnyMove() {
+    for (let r = 0; r < SIZE; r++)
+      for (let c = 0; c < SIZE; c++) {
+        if (c + 1 < SIZE && wouldMatch({r,c}, {r,c:c+1})) return [{r,c},{r,c:c+1}];
+        if (r + 1 < SIZE && wouldMatch({r,c}, {r:r+1,c})) return [{r,c},{r:r+1,c}];
+      }
+    return null;
+  }
+  function hasMove() { return findAnyMove() !== null; }
+
+  // ---------- effects ----------
+  function spawnHeart(r, c) {
+    const el = cells[r][c];
+    const h = document.createElement('div');
+    h.className = 'heart';
+    h.textContent = ['💗','💖','💕','✨'][Math.floor(Math.random()*4)];
+    h.style.left = (el.offsetLeft + el.offsetWidth/2 - 10) + 'px';
+    h.style.top = el.offsetTop + 'px';
+    boardEl.appendChild(h);
+    setTimeout(() => h.remove(), 1000);
+  }
+  function showCombo(n) {
+    const d = document.createElement('div');
+    d.className = 'combo';
+    d.textContent = n >= 4 ? `UWU x${n}!` : n === 3 ? `SŁODKO x3!` : `COMBO x${n}`;
+    boardEl.appendChild(d);
+    setTimeout(() => d.remove(), 800);
+  }
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // ---------- resolve cascades ----------
+  async function resolve() {
+    let chain = 0;
+    while (true) {
+      const matches = findMatches();
+      if (matches.size === 0) break;
+      chain++;
+      const gained = matches.size * 10 * chain;
+      score += gained;
+      scoreEl.textContent = score;
+      if (chain > 1) showCombo(chain);
+      matches.forEach(i => {
+        const r = Math.floor(i / SIZE), c = i % SIZE;
+        cells[r][c].classList.add('matched');
+        if (Math.random() < .5) spawnHeart(r, c);
+      });
+      await sleep(360);
+      matches.forEach(i => { grid[Math.floor(i / SIZE)][i % SIZE] = -1; });
+      // gravity
+      const fell = [];
+      for (let c = 0; c < SIZE; c++) {
+        let write = SIZE - 1;
+        for (let r = SIZE - 1; r >= 0; r--) {
+          if (grid[r][c] !== -1) {
+            if (write !== r) { grid[write][c] = grid[r][c]; grid[r][c] = -1; fell.push(write*SIZE+c); }
+            write--;
+          }
+        }
+        for (let r = write; r >= 0; r--) { grid[r][c] = randType(); fell.push(r*SIZE+c); }
+      }
+      render();
+      fell.forEach(i => cells[Math.floor(i/SIZE)][i%SIZE].classList.add('fall'));
+      await sleep(300);
+    }
+    render();
+    return chain;
+  }
+
+  // ---------- input ----------
+  function coordsOf(el) { return { r: +el.dataset.r, c: +el.dataset.c }; }
+  function adjacent(a, b) { return Math.abs(a.r-b.r) + Math.abs(a.c-b.c) === 1; }
+
+  function onDown(e) {
+    if (busy) return;
+    dragStart = { ...coordsOf(e.currentTarget), x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  }
+
+  function onUp(e) {
+    if (busy || !dragStart) return;
+    const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
+    const start = { r: dragStart.r, c: dragStart.c };
+    dragStart = null;
+    if (Math.abs(dx) > 20 || Math.abs(dy) > 20) {
+      // swipe
+      const tgt = { r: start.r, c: start.c };
+      if (Math.abs(dx) > Math.abs(dy)) tgt.c += dx > 0 ? 1 : -1; else tgt.r += dy > 0 ? 1 : -1;
+      if (tgt.r < 0 || tgt.r >= SIZE || tgt.c < 0 || tgt.c >= SIZE) return;
+      selected = null;
+      trySwap(start, tgt);
+      return;
+    }
+    // click
+    if (!selected) { selected = start; render(); return; }
+    if (selected.r === start.r && selected.c === start.c) { selected = null; render(); return; }
+    if (!adjacent(selected, start)) { selected = start; render(); return; }
+    const a = selected; selected = null;
+    trySwap(a, start);
+  }
+
+  async function trySwap(a, b) {
+    busy = true;
+    clearHints();
+    swapIn(grid, a, b);
+    render();
+    await sleep(180);
+    if (findMatches().size === 0) {
+      swapIn(grid, a, b);
+      cells[a.r][a.c].classList.add('shake');
+      cells[b.r][b.c].classList.add('shake');
+      await sleep(300);
+      render();
+      busy = false;
+      return;
+    }
+    moves--;
+    movesEl.textContent = moves;
+    await resolve();
+    if (!hasMove()) { await autoShuffle(); }
+    busy = false;
+    checkEnd();
+  }
+
+  async function autoShuffle() {
+    ovTitle.textContent = 'Brak ruchów';
+    ovText.textContent = 'Tasuję planszę…';
+    ovBtn.style.display = 'none';
+    overlay.classList.add('show');
+    await sleep(700);
+    initGrid(); render();
+    overlay.classList.remove('show');
+    ovBtn.style.display = '';
+  }
+
+  function checkEnd() {
+    if (score >= target) {
+      level++;
+      ovTitle.textContent = '💖 Poziom ukończony! 💖';
+      ovText.textContent = `Wynik: ${score}. Następny cel: ${target + 1000 * level}`;
+      ovBtn.textContent = 'Następny poziom';
+      ovBtn.onclick = () => { overlay.classList.remove('show'); nextLevel(); };
+      overlay.classList.add('show');
+    } else if (moves <= 0) {
+      ovTitle.textContent = '💔 Koniec ruchów';
+      ovText.textContent = `Zabrakło ${target - score} punktów. Spróbuj jeszcze raz!`;
+      ovBtn.textContent = 'Od nowa';
+      ovBtn.onclick = () => { overlay.classList.remove('show'); newGame(); };
+      overlay.classList.add('show');
+    }
+  }
+
+  function nextLevel() {
+    target += 1000 * level;
+    moves = 30;
+    score = 0;
+    updateHud();
+    initGrid(); render();
+  }
+
+  function updateHud() {
+    scoreEl.textContent = score; movesEl.textContent = moves;
+    targetEl.textContent = target; levelEl.textContent = level;
+  }
+
+  function newGame() {
+    score = 0; moves = 30; target = 1000; level = 1; selected = null;
+    updateHud();
+    initGrid(); render();
+  }
+
+  function clearHints() { document.querySelectorAll('.tile.hint').forEach(t => t.classList.remove('hint')); }
+
+  document.getElementById('hintBtn').onclick = () => {
+    if (busy) return;
+    clearHints();
+    const mv = findAnyMove();
+    if (mv) mv.forEach(p => cells[p.r][p.c].classList.add('hint'));
+    setTimeout(clearHints, 2000);
+  };
+  document.getElementById('shuffleBtn').onclick = async () => {
+    if (busy) return;
+    busy = true;
+    moves = Math.max(0, moves - 5);
+    movesEl.textContent = moves;
+    initGrid(); render();
+    busy = false;
+    checkEnd();
+  };
+  document.getElementById('restartBtn').onclick = () => { if (!busy) newGame(); };
+
+  function buildLegend() {
+    const lg = document.getElementById('legend');
+    TYPES.forEach((t, i) => {
+      const el = document.createElement('div');
+      el.className = 'tile';
+      styleTile(el, i);
+      lg.appendChild(el);
+    });
+  }
+
+  preload().then(() => { buildLegend(); initGrid(); buildDOM(); render(); updateHud(); });
+})();
+</script>
+</body>
+</html>
