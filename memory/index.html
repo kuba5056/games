@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memory</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --card: #313244;
+    --accent: #89b4fa;
+    --text: #cdd6f4;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+  }
+  h1 { margin: 8px 0 4px; }
+  .stats {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 16px;
+    font-size: 1.1rem;
+  }
+  button {
+    background: var(--accent);
+    color: #11111b;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.1); }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    width: min(92vw, 520px);
+  }
+  .card {
+    aspect-ratio: 1 / 1;
+    perspective: 800px;
+    cursor: pointer;
+  }
+  .card-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.4s;
+    transform-style: preserve-3d;
+  }
+  .card.flipped .card-inner,
+  .card.matched .card-inner { transform: rotateY(180deg); }
+  .card.matched { cursor: default; opacity: 0.75; }
+  .face {
+    position: absolute;
+    inset: 0;
+    border-radius: 10px;
+    backface-visibility: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .front {
+    background: var(--card);
+    font-size: 2rem;
+    border: 2px solid #45475a;
+  }
+  .back {
+    background: #fff;
+    transform: rotateY(180deg);
+  }
+  .back img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .back span { font-size: 3rem; }
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+    font-size: 1.5rem;
+    text-align: center;
+    padding: 16px;
+  }
+  .overlay.show { display: flex; }
+  .hint { font-size: 0.85rem; opacity: 0.7; margin-top: 12px; text-align: center; }
+</style>
+</head>
+<body>
+  <h1>Memory</h1>
+  <div class="stats">
+    <span>Ruchy: <b id="moves">0</b></span>
+    <span>Czas: <b id="time">0</b>s</span>
+    <button id="restart">Nowa gra</button>
+  </div>
+  <div class="board" id="board"></div>
+  <p class="hint" id="hint"></p>
+
+  <div class="overlay" id="overlay">
+    <div>🎉 Brawo! Wygrałeś!</div>
+    <div id="summary"></div>
+    <button id="again">Zagraj ponownie</button>
+  </div>
+
+<script>
+// ======= KONFIGURACJA =======
+// Liczba PAR (plansza 4x4 = 8 par = 16 kart).
+// Zdjęcia wrzuć do folderu assets/ jako 1.jpg, 2.jpg, ... 8.jpg
+const PAIRS = 8;
+const IMAGE_DIR = 'assets/';
+const IMAGE_EXT = 'jpg';
+// Zapasowe emoji, jeśli któregoś zdjęcia brakuje
+const FALLBACK = ['🍎','🍌','🍇','🍓','🍒','🍉','🥝','🍍','🥑','🌽','🥕','🍋'];
+// ============================
+
+const board = document.getElementById('board');
+const movesEl = document.getElementById('moves');
+const timeEl = document.getElementById('time');
+const overlay = document.getElementById('overlay');
+const summary = document.getElementById('summary');
+const hint = document.getElementById('hint');
+
+let first = null, second = null, lock = false;
+let moves = 0, matched = 0, seconds = 0, timer = null, started = false;
+
+function loadImage(i) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve({ id: i, src: img.src });
+    img.onerror = () => resolve({ id: i, src: null });
+    img.src = `${IMAGE_DIR}${i}.${IMAGE_EXT}`;
+  });
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+async function startGame() {
+  clearInterval(timer);
+  first = second = null; lock = false;
+  moves = 0; matched = 0; seconds = 0; started = false;
+  movesEl.textContent = 0;
+  timeEl.textContent = 0;
+  overlay.classList.remove('show');
+  board.innerHTML = '';
+
+  const images = await Promise.all(
+    Array.from({ length: PAIRS }, (_, i) => loadImage(i + 1))
+  );
+  const missing = images.filter(im => !im.src).length;
+  hint.textContent = missing
+    ? `Brakuje ${missing} zdjęć w assets/ — użyto emoji zastępczych.`
+    : '';
+
+  const deck = shuffle([...images, ...images]);
+  deck.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.id = item.id;
+    const backContent = item.src
+      ? `<img src="${item.src}" alt="">`
+      : `<span>${FALLBACK[(item.id - 1) % FALLBACK.length]}</span>`;
+    card.innerHTML = `
+      <div class="card-inner">
+        <div class="face front">?</div>
+        <div class="face back">${backContent}</div>
+      </div>`;
+    card.addEventListener('click', () => flip(card));
+    board.appendChild(card);
+  });
+}
+
+function startTimer() {
+  started = true;
+  timer = setInterval(() => { timeEl.textContent = ++seconds; }, 1000);
+}
+
+function flip(card) {
+  if (lock || card === first || card.classList.contains('matched')) return;
+  if (!started) startTimer();
+  card.classList.add('flipped');
+
+  if (!first) { first = card; return; }
+  second = card;
+  lock = true;
+  movesEl.textContent = ++moves;
+
+  if (first.dataset.id === second.dataset.id) {
+    first.classList.add('matched');
+    second.classList.add('matched');
+    matched++;
+    reset();
+    if (matched === PAIRS) win();
+  } else {
+    setTimeout(() => {
+      first.classList.remove('flipped');
+      second.classList.remove('flipped');
+      reset();
+    }, 800);
+  }
+}
+
+function reset() { first = second = null; lock = false; }
+
+function win() {
+  clearInterval(timer);
+  summary.textContent = `Ruchy: ${moves} · Czas: ${seconds}s`;
+  overlay.classList.add('show');
+}
+
+document.getElementById('restart').addEventListener('click', startGame);
+document.getElementById('again').addEventListener('click', startGame);
+startGame();
+</script>
+</body>
+</html>
